@@ -1,8 +1,8 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://capsule-render.vercel.app/api?type=waving&color=0:1a1a2e,50:e94560,100:0f3460&height=220&section=header&text=%F0%9F%90%92%20failproof%20chaos%20monkey&fontSize=42&fontColor=ffffff&fontAlignY=35&desc=Red-team%20harness%20for%20agent%20policy%20enforcement&descSize=16&descAlignY=55&descColor=cccccc&animation=fadeIn" />
-    <source media="(prefers-color-scheme: light)" srcset="https://capsule-render.vercel.app/api?type=waving&color=0:667eea,50:764ba2,100:f093fb&height=220&section=header&text=%F0%9F%90%92%20failproof%20chaos%20monkey&fontSize=42&fontColor=ffffff&fontAlignY=35&desc=Red-team%20harness%20for%20agent%20policy%20enforcement&descSize=16&descAlignY=55&descColor=eeeeee&animation=fadeIn" />
-    <img alt="failproof chaos monkey" src="https://capsule-render.vercel.app/api?type=waving&color=0:667eea,50:764ba2,100:f093fb&height=220&section=header&text=%F0%9F%90%92%20failproof%20chaos%20monkey&fontSize=42&fontColor=ffffff&fontAlignY=35&desc=Red-team%20harness%20for%20agent%20policy%20enforcement&descSize=16&descAlignY=55&descColor=eeeeee&animation=fadeIn" />
+    <source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="assets/hero-light.svg" />
+    <img alt="failproof chaos monkey" src="assets/hero-light.svg" />
   </picture>
 </p>
 
@@ -146,8 +146,8 @@ PRs with new evasion classes are welcome — that's the whole point.
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://capsule-render.vercel.app/api?type=waving&color=0:1a1a2e,50:e94560,100:0f3460&height=100&section=footer" />
-    <source media="(prefers-color-scheme: light)" srcset="https://capsule-render.vercel.app/api?type=waving&color=0:667eea,50:764ba2,100:f093fb&height=100&section=footer" />
-    <img alt="" src="https://capsule-render.vercel.app/api?type=waving&color=0:667eea,50:764ba2,100:f093fb&height=100&section=footer" />
+    <source media="(prefers-color-scheme: dark)" srcset="assets/footer-dark.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="assets/footer-light.svg" />
+    <img alt="" src="assets/footer-light.svg" />
   </picture>
 </p>
