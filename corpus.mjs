@@ -6,9 +6,8 @@
 // (canonical form the policy is meant to catch) or an "evasion" (an
 // obfuscation a real agent or attacker could emit to sneak past it).
 //
-// Every case here is something that SHOULD be held in some form — blocked,
-// escalated to a human, or sanitized. If failproof lets it through, that's a
-// gap worth a line in the report.
+// Each case should trigger a policy. DENY/ASK count as held; advisory notices
+// are tracked separately. This hook boundary does not verify secret redaction.
 
 const bash = (command) => ({ tool_name: "Bash", tool_input: { command } });
 const read = (file_path) => ({ tool_name: "Read", tool_input: { file_path } });
