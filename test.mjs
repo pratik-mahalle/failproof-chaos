@@ -1,11 +1,12 @@
 // Runnable CLI check; all engine responses are fake and commands never execute.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CORPUS } from "./corpus.mjs";
+import { CORPUS, CONTROLS } from "./corpus.mjs";
 
 const work = mkdtempSync(join(tmpdir(), "failproof-check-"));
 const engine = join(work, "engine.mjs");
@@ -15,14 +16,14 @@ const resultsFile = join(work, "results.json");
 const read = () => JSON.parse(readFileSync(resultsFile, "utf8"));
 function run(args = ["--cat", "sudo"], mode = "normal", binary = engine) {
   return spawnSync(process.execPath, [runner, ...args], {
-    cwd: work, env: { ...process.env, FAILPROOFAI_BIN: binary, CHECK_MODE: mode },
+    cwd: work, env: { ...process.env, FAILPROOFAI_BIN: binary, FAILPROOFAI_PACK_DIR: join(work, "packs"), CHECK_MODE: mode },
     encoding: "utf8", timeout: 30000,
   });
 }
 
 try {
   writeFileSync(engine, `#!${process.execPath}
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 const mode = process.env.CHECK_MODE;
 if (process.argv[2] === '--version') { console.log('9.8.7'); process.exit(0); }
 if (process.argv[2] === 'policies') { console.log('test policies: pack@abc, 3 enabled'); process.exit(0); }
@@ -41,7 +42,23 @@ if (mode === 'fail-closed') emit({ decision: 'block', reason: 'failproofai could
 if (mode === 'pack-failure') emit({ hookSpecificOutput: { permissionDecision: 'deny', permissionDecisionReason: 'Blocked because a policy pack this machine is configured to enforce is not running' } });
 if (mode === 'all-allow') process.exit(0);
 if (mode === 'all-deny') emit({ decision: 'block', reason: 'blocked' });
-if (input.hook_event_name === 'PostToolUse') emit({ hookSpecificOutput: { additionalContext: 'secret detected' } });
+if (mode === 'isolation') {
+  const manifest = JSON.parse(readFileSync(process.env.FAILPROOFAI_PACK_DIR + '/installed.json', 'utf8'));
+  if (manifest.packs.length !== 1 || manifest.packs[0].enabled.length !== 1 || input.cwd !== process.cwd() || !existsSync(input.cwd + '/.failproofai')) process.exit(1);
+  writeFileSync('${join(work, "isolated-cwd.txt")}', input.cwd);
+  const target = manifest.packs[0].enabled[0];
+  if (command.includes('--force-with-lease') && target === 'block-force-push') process.exit(0);
+  if (command.startsWith('git push') && !command.includes('feature/')) {
+    emit({ decision: 'block', reason: target });
+  }
+  process.exit(0);
+}
+if (command === 'echo sudo') {
+  if (mode === 'false-positive') emit({ decision: 'block', reason: 'false positive' });
+  if (mode === 'control-warn') emit({ hookSpecificOutput: { additionalContext: 'false notice' } });
+  if (mode === 'control-error') process.exit(1);
+}
+if (input.hook_event_name === 'PostToolUse' && !/^(Build completed|HTTP status)/.test(input.tool_response.stdout)) emit({ hookSpecificOutput: { additionalContext: 'secret detected' } });
 if (command === 'sudo rm /var/log/syslog') {
   if (mode === 'slip') process.exit(0);
   if (mode === 'warn') emit({ hookSpecificOutput: { additionalContext: 'please stop' } });
@@ -54,6 +71,12 @@ process.exit(0);
   assert.equal(run([]).status, 0);
   const initial = read();
   assert.equal(initial.results.length, CORPUS.length);
+  assert.equal(initial.schemaVersion, 1);
+  assert.equal(initial.mode, "combined");
+  assert.equal(initial.controls.length, CONTROLS.length);
+  assert.equal(initial.summary.controlsAllowed, CONTROLS.length);
+  assert.equal(initial.summary.falsePositives, 0);
+  assert.equal(initial.summary.controlErrors, 0);
   assert.equal(initial.engine.version, "9.8.7");
   assert.match(initial.policies, /pack@abc/);
   assert.equal(initial.summary.held, 1);
@@ -65,15 +88,32 @@ process.exit(0);
   writeFileSync(baseline, JSON.stringify(initial));
   const ci = ["--cat", "sudo", "--baseline", baseline, "--ci"];
   assert.equal(run(ci).status, 0); // known ALLOW and warning do not fail CI
-  assert.deepEqual(read().summary, { total: 3, held: 1, flagged: 1, allowed: 1, errors: 0, evasionsHeld: 0, evasionsTotal: 2 });
+  assert.deepEqual(read().summary, { total: 3, held: 1, flagged: 1, allowed: 1, errors: 0, evasionsHeld: 0, evasionsTotal: 2,
+    controlsTotal: 2, controlsAllowed: 2, falsePositives: 0, controlErrors: 0 });
   assert.equal(run(ci, "slip").status, 1);
   assert.deepEqual(read().comparison.changes, [{ id: "sudo-01", before: "DENY", after: "ALLOW", kind: "REGRESSION" }]);
   assert.equal(run(ci, "warn").status, 1); // block -> warning is a regression
   assert.equal(run(ci, "all-allow").status, 1); // warning -> allow also regresses
   assert.equal(read().comparison.changes.length, 2);
   assert.equal(run(ci, "ask").status, 0);
-  assert.equal(run(ci, "all-deny").status, 0);
-  assert.equal(read().comparison.changes.every((r) => r.kind === "IMPROVEMENT"), true);
+  assert.equal(run(ci, "all-deny").status, 1); // improved attacks, newly blocked controls
+  assert.equal(read().comparison.changes.filter((r) => r.kind === "IMPROVEMENT").length, 2);
+  assert.equal(read().comparison.changes.filter((r) => r.kind === "REGRESSION").length, 2);
+  for (const mode of ["false-positive", "control-warn"]) {
+    assert.equal(run(ci, mode).status, 1);
+    assert.equal(read().summary.falsePositives, 1);
+    assert.equal(read().comparison.changes[0].id, "ok-sudo-01");
+  }
+  assert.equal(run(ci, "control-error").status, 2);
+  assert.equal(read().summary.errors, 0);
+  assert.equal(read().summary.controlErrors, 1);
+  assert.equal(read().summary.falsePositives, 0);
+  run([], "false-positive");
+  writeFileSync(baseline, JSON.stringify(read()));
+  assert.equal(run(ci, "false-positive").status, 0); // reviewed known false positive
+  assert.equal(run(ci).status, 0);
+  assert.equal(read().comparison.changes[0].kind, "IMPROVEMENT");
+  writeFileSync(baseline, JSON.stringify(initial));
   assert.equal(run(ci.slice(0, -1), "slip").status, 0); // comparison without gating
   assert.match(readFileSync(join(work, "REPORT.md"), "utf8"), /<<'PAYLOAD'/);
   assert.deepEqual(JSON.parse(readFileSync(baseline, "utf8")), initial);
@@ -82,25 +122,60 @@ process.exit(0);
     assert.equal(run(ci, mode).status, 2, mode);
     assert.equal(read().summary.errors, 3, mode);
     assert.equal(read().summary.allowed, 0, mode);
+    assert.equal(read().summary.controlErrors, 2, mode);
     assert.equal(read().comparison.changes.length, 0, mode);
   }
-  assert.equal(run(ci, "exit2").status, 0);
+  assert.equal(run(ci, "exit2").status, 1);
   assert.equal(read().summary.held, 3);
 
   const legacy = initial.results.map((r) => ({ ...r, verdict: r.verdict === "FLAG" ? "SANITIZE" : r.verdict, held: true }));
   writeFileSync(baseline, JSON.stringify(legacy));
-  assert.equal(run(["--cat", "secrets", "--baseline", baseline, "--ci"]).status, 0);
+  assert.equal(run(["--cat", "secrets", "--baseline", baseline, "--ci"]).status, 2); // controls need review
   assert.equal(read().summary.held, 0); // ignore legacy held flags
   assert.equal(read().comparison.changes.length, 0);
-  writeFileSync(baseline, JSON.stringify(initial.results.filter((r) => r.id !== "sudo-01")));
+  assert.deepEqual(read().comparison.unbaselined, ["ok-sec-01", "ok-sec-02"]);
+  assert.equal(run(["--cat", "secrets", "--baseline", baseline]).status, 0);
+  writeFileSync(baseline, JSON.stringify({ ...initial, results: initial.results.filter((r) => r.id !== "sudo-01") }));
   assert.equal(run(ci).status, 2);
   assert.deepEqual(read().comparison.unbaselined, ["sudo-01"]);
-  writeFileSync(baseline, JSON.stringify(initial.results.map((r) => r.id === "sudo-01" ? { ...r, tool_input: { command: "different attack" } } : r)));
+  writeFileSync(baseline, JSON.stringify({ ...initial, results: initial.results.map((r) => r.id === "sudo-01" ? { ...r, tool_input: { command: "different attack" } } : r) }));
   assert.equal(run(ci).status, 2);
   assert.deepEqual(read().comparison.unbaselined, ["sudo-01"]);
-  writeFileSync(baseline, JSON.stringify([...initial.results, { ...initial.results.find((r) => r.id === "sudo-01"), id: "retired" }]));
+  writeFileSync(baseline, JSON.stringify({ ...initial, results: [...initial.results, { ...initial.results.find((r) => r.id === "sudo-01"), id: "retired" }] }));
   assert.equal(run(ci).status, 2);
   assert.deepEqual(read().comparison.removed, ["retired"]);
+
+  // The native pack manifest selects one target without touching source settings.
+  const packsDir = join(work, "packs");
+  mkdirSync(join(packsDir, "artifacts"), { recursive: true });
+  const artifact = "export default [];";
+  writeFileSync(join(packsDir, "artifacts", "pack.mjs"), artifact);
+  const manifest = { schemaVersion: 1, packs: [{ id: "test/policies", version: "abc", entry: "artifacts/pack.mjs",
+    sha256: createHash("sha256").update(artifact).digest("hex"),
+    policies: [...new Set(CORPUS.map((c) => c.target))].map((name) => ({ name })), enabled: [] }] };
+  const manifestFile = join(packsDir, "installed.json");
+  writeFileSync(manifestFile, JSON.stringify(manifest));
+  const isolatedArgs = ["--cat", "git", "--isolate"];
+  assert.equal(run(isolatedArgs, "isolation", "./engine.mjs").status, 0);
+  const isolated = read();
+  assert.equal(isolated.mode, "isolated");
+  assert.equal(isolated.summary.held, 5);
+  assert.equal(isolated.results.find((r) => r.id === "git-02").reason, "block-force-push");
+  assert.equal(isolated.results.find((r) => r.id === "git-04").reason, "block-push-master");
+  assert.equal(isolated.controls.find((r) => r.id === "ok-git-03").verdict, "ALLOW");
+  assert.equal(isolated.isolation.packs[0].sha256, manifest.packs[0].sha256);
+  assert.equal(existsSync(readFileSync(join(work, "isolated-cwd.txt"), "utf8")), false);
+  assert.deepEqual(JSON.parse(readFileSync(manifestFile, "utf8")), manifest);
+  writeFileSync(baseline, JSON.stringify(isolated));
+  assert.equal(run([...isolatedArgs, "--baseline", baseline, "--ci"], "isolation").status, 0);
+  assert.equal(run(["--cat", "git", "--baseline", baseline, "--ci"]).status, 2);
+  writeFileSync(baseline, JSON.stringify(initial));
+  assert.equal(run([...isolatedArgs, "--baseline", baseline, "--ci"], "isolation").status, 2);
+  for (const packs of [[], [...manifest.packs, ...manifest.packs], [{ ...manifest.packs[0], sha256: "0".repeat(64) }],
+    [{ ...manifest.packs[0], entry: "../../engine.mjs" }]]) {
+    writeFileSync(manifestFile, JSON.stringify({ ...manifest, packs }));
+    assert.equal(run(isolatedArgs, "isolation").status, 2);
+  }
 
   const previousArtifacts = readFileSync(resultsFile, "utf8");
   for (const args of [["--ci"], ["--cat", "missing"], ["--cat"], ["--wat"], ["--baseline", resultsFile]])
@@ -108,12 +183,16 @@ process.exit(0);
   assert.equal(run([], "normal", join(work, "missing-engine")).status, 2);
   symlinkSync(resultsFile, join(work, "alias.json"));
   assert.equal(run(["--baseline", join(work, "alias.json")]).status, 2);
+  linkSync(resultsFile, join(work, "hardlink.json"));
+  assert.equal(run(["--baseline", join(work, "hardlink.json")]).status, 2);
   const previousReport = readFileSync(join(work, "REPORT.md"), "utf8");
   writeFileSync(join(work, "REPORT.md"), JSON.stringify(initial));
   assert.equal(run(["--baseline", join(work, "REPORT.md")]).status, 2);
   assert.deepEqual(JSON.parse(readFileSync(join(work, "REPORT.md"), "utf8")), initial);
   writeFileSync(join(work, "REPORT.md"), previousReport);
-  for (const invalid of [[], null, {}, { schemaVersion: 2, results: initial.results }, [initial.results[0], initial.results[0]], [{ ...initial.results[0], verdict: "ERROR" }]]) {
+  for (const invalid of [[], null, {}, { schemaVersion: 2, results: initial.results }, [initial.results[0], initial.results[0]], [{ ...initial.results[0], verdict: "ERROR" }],
+    { ...initial, mode: "unknown" }, { ...initial, controls: {} }, { ...initial, controls: initial.results },
+    { ...initial, controls: [initial.controls[0], initial.controls[0]] }]) {
     writeFileSync(baseline, JSON.stringify(invalid));
     assert.equal(run(ci).status, 2);
   }
@@ -122,7 +201,7 @@ process.exit(0);
   assert.equal(readFileSync(resultsFile, "utf8"), previousArtifacts);
   assert.equal(run(["--help"], "normal", join(work, "missing-engine")).status, 0);
   assert.match(readFileSync(join(work, "REPORT.md"), "utf8"), /redaction is not verified/);
-  console.log("CLI checks passed: scoring, metadata, baseline comparison, CI exits, and engine errors.");
+  console.log("CLI checks passed: contract, attacks, benign controls, policy isolation, CI exits, and engine errors.");
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

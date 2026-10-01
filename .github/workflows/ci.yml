@@ -10,8 +10,14 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ["22", "24"]
+        engine: ["1.0.3", "1.0.9"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     env:
       FAILPROOFAI_HOME: /tmp/failproof-home
       FAILPROOFAI_NO_FIRST_RUN: "1"
@@ -22,15 +28,25 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: "22"
+          node-version: ${{ matrix.node }}
           package-manager-cache: false
       - name: Check the runner
         run: node test.mjs
       - name: Install the pinned engine and policies
         run: |
-          npm install --global failproofai@1.0.3
+          npm install --global failproofai@${{ matrix.engine }}
           failproofai policies add FailproofAI/policies@06b802b63f4f --all
-      - name: Compare with the reviewed snapshot
+      - name: Install the default policy configuration
+        env:
+          FAILPROOFAI_HOME: ${{ runner.temp }}/failproof-defaults
+        run: failproofai policies add FailproofAI/policies@06b802b63f4f
+      - name: Compare all policies with the reviewed snapshot
         run: |
           cp results.json "$RUNNER_TEMP/failproof-baseline.json"
           node run.mjs --baseline "$RUNNER_TEMP/failproof-baseline.json" --ci
+      - name: Compare default policies with their reviewed snapshot
+        env:
+          FAILPROOFAI_HOME: ${{ runner.temp }}/failproof-defaults
+        run: node run.mjs --baseline baselines/defaults.json --ci
+      - name: Compare isolated policies with their reviewed snapshot
+        run: node run.mjs --isolate --baseline baselines/isolated.json --ci
