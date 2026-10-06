@@ -97,8 +97,9 @@ Validation completed on [the eight-job branch run](https://github.com/pratik-mah
 ### 4 Validate the workflow in use
 
 - [x] Prepare a project-root CI recipe and a short guide for converting an incident into a fixture.
-- [x] Prepare and validate suites in three repositories chosen from the owner's GitHub profile, with at least five legitimate calls each and pinned CI integrations.
+- [x] Prepare, validate, and merge suites in three repositories chosen from the owner's GitHub profile, with at least five legitimate calls each and pinned CI integrations.
 - [x] Verify that deliberately disabling a guard in each temporary configuration fails its suite. Rehearse the existing unwanted block and confirm that a saved failing baseline cannot hide it.
+- [x] Record initial value: first runs on main, measured CI times, controlled regressions caught, the known unwanted block, and the shared setup defect fixed.
 - [ ] Capture a real incident from hook use and use the suite during an actual policy change.
 - [ ] Record authoring and review effort, actionable findings, manual checks saved, and repeat use on another change.
 
@@ -113,4 +114,4 @@ For the initial cohort, at least two repositories should reuse the suite on anot
 - [ ] Pilot feedback supports recurring use.
 - [x] Review the additive contract changes and record them in `CHANGELOG.md` before preparing v1.3.
 
-The repository trial is prepared and validated. The next step is collecting observations from actual use and repeat use as described in [PILOT.md](PILOT.md). Release remains conditional on that feedback.
+The repository trial is merged and its first policy runs on main pass. Initial measurements are recorded in the pilot guide. The next step is collecting observations from actual use and repeat use as described in [PILOT.md](PILOT.md). Release remains conditional on that feedback.

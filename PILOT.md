@@ -94,9 +94,9 @@ For the initial cohort, look for repeat use in at least two repositories and fee
 
 ## Initial repository trial — 2026-10-06
 
-The first cohort covers Python agent evaluations, a TypeScript/Swift billing application, and a Python/Swift AWS observation application. Each draft PR adds five documented ordinary tool calls, two synthetic risky probes, a pinned CI job, and a short review guide. The cases measure independent coding-agent hook decisions; their command and write payloads remain data.
+The first cohort covers Python agent evaluations, a TypeScript/Swift billing application, and a Python/Swift AWS observation application. Each merged PR adds five documented ordinary tool calls, two synthetic risky probes, a pinned CI job, and a short review guide. The cases measure independent coding-agent hook decisions; their command and write payloads remain data.
 
-| Repository and draft PR | Reviewed source commit | Local 1.0.3 | CI 1.0.9 |
+| Repository and PR | Reviewed source commit | Local 1.0.3 | CI 1.0.9 |
 |---|---|---|---|
 | [agent-action-evals #1](https://github.com/pratik-mahalle/agent-action-evals/pull/1) | `651f895c4b6edd17884812ff90ee0bb24b1d24bf` | 7/7 pass | [7/7 pass](https://github.com/pratik-mahalle/agent-action-evals/actions/runs/37443287082) |
 | [rush-hour #1](https://github.com/pratik-mahalle/rush-hour/pull/1) | `bcf8a72d8c4981f5a7ef79dcc328b1cb412695a9` | 7/7 pass | [7/7 pass](https://github.com/pratik-mahalle/rush-hour/actions/runs/37443296487) |
@@ -104,7 +104,7 @@ The first cohort covers Python agent evaluations, a TypeScript/Swift billing app
 
 All six measurements allowed every ordinary call and denied both risky probes in each repository, with zero engine errors. The three downloaded CI artifacts matched the local case IDs, payloads, expectations, decisions, and category counts. Local suite runs took 1.17, 0.97, and 1.09 seconds respectively; these times exclude authoring, installation, and CI queue time.
 
-All checks on the three draft PRs pass, including the existing application CI in agent-action-evals and rush-hour. Infralive's existing Codemagic workflow only runs on main, so its native application validation was not triggered by this draft PR.
+All checks on the reviewed PR heads passed before merge, including the existing application CI in agent-action-evals and rush-hour. Infralive uses a main-only Codemagic workflow for native application validation; its status is outside these GitHub policy reports.
 
 No tracked Failproof hook configuration was found in these repositories. The trial explicitly uses all 38 policies from `FailproofAI/policies@06b802b63f4f` (full commit `06b802b63f4f399a4ef81bed7e932f94fd85af13`) and runner commit `177eb3d15720b087a2e2c01d878ea559b65f7f0b`. These jobs invoke policy hooks for tests; they do not install live agent hook integration.
 
@@ -133,8 +133,35 @@ node /path/to/failproof-chaos/run.mjs --corpus /path/to/failproof-chaos/examples
 
 This rehearsal intentionally returns exit 1. Saving its result as a baseline and rerunning with `--baseline` still returns exit 1: an unchanged bad decision cannot silence an expectation. Disabling `block-rm-rf` in a temporary pack allows the quoted example but also allows catastrophic deletion, so the suite still returns exit 1. All three checks produced zero engine errors. Keep both expectations when reviewing a policy fix.
 
+### Value recorded on 2026-10-06
+
+All three pilot PRs are merged into `main`. Each policy job runs on pushes and pull requests using the same reviewed runner and pack pins. The downloaded post-merge reports match the reviewed fixtures, decisions, and category counts.
+
+| Merged pilot | First policy run on main | Job duration | First CI attempt to first pass |
+|---|---|---|---|
+| [agent-action-evals #1](https://github.com/pratik-mahalle/agent-action-evals/pull/1) | [7/7 pass](https://github.com/pratik-mahalle/agent-action-evals/actions/runs/37444854037) | 15s | 129s ([first attempt](https://github.com/pratik-mahalle/agent-action-evals/actions/runs/37443075439), [first pass](https://github.com/pratik-mahalle/agent-action-evals/actions/runs/37443287082)) |
+| [rush-hour #1](https://github.com/pratik-mahalle/rush-hour/pull/1) | [7/7 pass](https://github.com/pratik-mahalle/rush-hour/actions/runs/37444867754) | 18s | 128s ([first attempt](https://github.com/pratik-mahalle/rush-hour/actions/runs/37443086492), [first pass](https://github.com/pratik-mahalle/rush-hour/actions/runs/37443290688)) |
+| [infralive #1](https://github.com/pratik-mahalle/infralive/pull/1) | [7/7 pass](https://github.com/pratik-mahalle/infralive/actions/runs/37444883726) | 16s | 120s ([first attempt](https://github.com/pratik-mahalle/infralive/actions/runs/37443099880), [first pass](https://github.com/pratik-mahalle/infralive/actions/runs/37443294926)) |
+
+Job duration covers checkout, installation, the suite, and artifact upload; queue time is excluded. Time to first pass starts at the first remote workflow attempt and includes queue time and the shared CI recipe correction. Fixture authoring and review time were not captured. These are three internal trial measurements.
+
+| Measure | Recorded result |
+|---|---|
+| Ordinary actions allowed | 15/15 on each engine and in the first main runs; zero unwanted blocks in the repository seed suites |
+| Synthetic risky probes denied | 6/6 on each engine and in the first main runs |
+| Controlled policy regressions caught | 3/3; each failed its exact expectation with exit 1 while ordinary actions remained allowed |
+| Known unwanted block reproduced | One quoted deletion example remains red, including with its failing result saved as a baseline; the policy issue remains open |
+| Setup friction resolved | One shared job-level environment error fixed in the guide and all three workflows |
+| Engine errors | Zero across the reviewed seed, mutation, and unwanted-block rehearsal runs |
+| Manual checks or time saved | Unmeasured; requires a before/after comparison during an actual change |
+| Authoring, review, and maintenance effort | Time unmeasured; the shared CI correction is the observed setup issue |
+| Repeat use on a subsequent policy or workflow change | None observed yet |
+| Production incidents captured | Zero; current repository fixtures are documented workflows and synthetic probes |
+
+The measured value is a working automated check that detects controlled regressions and preserves both unsafe allowances and unwanted blocks as failures. Time savings and recurring usefulness remain hypotheses.
+
 ### What remains to measure
 
 This is one owner's three-repository trial using documented workflows and synthetic probes. It establishes reproducible setup and working CI gates. Production incident capture, use during a real policy change, repeat use, review effort, manual checks saved, and willingness to pay have not been measured.
 
-On the next actual change, record those observations using the questions above. The continuation criterion still requires recurring use and useful feedback; a passing seed suite alone does not establish product demand.
+For the next actual change, record its PR or commit link, any affected case and policy, the observed finding and fix, minutes spent maintaining the suite, and the manual checks or minutes saved. Count repeat use when the suite is used on a subsequent policy or workflow change. The continuation criterion still requires recurring use and useful feedback; a passing seed suite alone does not establish product demand.
