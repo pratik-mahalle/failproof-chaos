@@ -100,10 +100,11 @@ Validation completed on [the eight-job branch run](https://github.com/pratik-mah
 - [x] Prepare, validate, and merge suites in three repositories chosen from the owner's GitHub profile, with at least five legitimate calls each and pinned CI integrations.
 - [x] Verify that deliberately disabling a guard in each temporary configuration fails its suite. Rehearse the existing unwanted block and confirm that a saved failing baseline cannot hide it.
 - [x] Record initial value: first runs on main, measured CI times, controlled regressions caught, the known unwanted block, and the shared setup defect fixed.
-- [ ] Capture a real incident from hook use and use the suite during an actual policy change.
-- [ ] Record authoring and review effort, actionable findings, manual checks saved, and repeat use on another change.
+- [x] Reuse the suites during a real published engine and policy update in all three repositories, preserving existing decisions and reviewing new cleanup expectations.
+- [ ] Capture a real incident from live hook use.
+- [ ] Measure human authoring and review effort, manual checks saved, and independent user feedback.
 
-The initial three-repository trial passed all 21 expectations on both local engine 1.0.3 and CI engine 1.0.9. All three controlled regressions failed as intended. The PRs, source pins, configuration, and limitations are recorded in [PILOT.md](PILOT.md). One owner's seed suites do not establish independent team adoption or recurring value.
+The initial three-repository trial passed all 21 expectations on both local engine 1.0.3 and CI engine 1.0.9. All three controlled regressions failed as intended. The PRs, source pins, configuration, and limitations are recorded in [PILOT.md](PILOT.md). One owner's seed suites do not establish independent team adoption or recurring value. The follow-up published dependency update passes all 27 expectations in both combined and isolated modes; the new cleanup behavior is advisory and remains distinct from refusals. Internal reuse is recorded in the pilot guide.
 
 For the initial cohort, at least two repositories should reuse the suite on another change and the owner should report reduced manual checking or an actionable finding. Broader demand still needs independent team feedback. If setup or fixture authoring prevents repeat use, improve that step before expanding coverage. Ask about willingness to pay after users have used the workflow.
 
@@ -114,4 +115,4 @@ For the initial cohort, at least two repositories should reuse the suite on anot
 - [ ] Pilot feedback supports recurring use.
 - [x] Review the additive contract changes and record them in `CHANGELOG.md` before preparing v1.3.
 
-The repository trial is merged and its first policy runs on main pass. Initial measurements are recorded in the pilot guide. The next step is collecting observations from actual use and repeat use as described in [PILOT.md](PILOT.md). Release remains conditional on that feedback.
+The initial trial and the follow-up dependency upgrade are merged, with policy runs on main passing. Initial measurements and internal reuse are recorded in [PILOT.md](PILOT.md). The next step is collecting owner feedback on review effort and manual checks saved, plus observations from live hook use. Release remains conditional on that feedback.
