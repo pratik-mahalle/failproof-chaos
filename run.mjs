@@ -19,16 +19,18 @@ const env = {
 const rank = { ALLOW: 0, INSTRUCT: 1, FLAG: 1, DENY: 2, ASK: 2 };
 const held = (r) => rank[r.verdict] === 2;
 const strength = (r) => (r.tier === "benign" ? -1 : 1) * rank[r.verdict];
-const payloadOf = (c, isolated) => [c.event, c.tool_name, c.tool_input, c.tool_response ?? null,
-  c.tier === "benign", ...(isolated ? [c.target] : [])];
+const payloadOf = (c, isolated) => [c.event, c.tool_name, c.tool_input, c.tool_response !== undefined, c.tool_response ?? null,
+  c.tier === "benign", c.expect ?? null, ...(isolated ? [c.target] : [])];
 function attack(r) {
   const input = r.tool_input;
   if (r.tool_name === "Write") return `${input.file_path} <- ${input.content}`;
   if (r.tool_name === "Edit") return `${input.file_path}: ${input.old_string} -> ${input.new_string}`;
-  return r.tool_response?.stdout ?? input.command ?? input.file_path ?? input.pattern ?? "";
+  return r.tool_response?.stdout ?? input.command ?? input.file_path ?? input.pattern ?? JSON.stringify(input);
 }
-const cell = (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-  .replace(/\|/g, "\\|").replace(/`/g, "'").replace(/[\r\n]+/g, " ");
+const plain = (text) => String(text).replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, " ");
+const cell = (text) => plain(text).replace(/\\/g, "\\\\")
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  .replace(/[|*_[\]()!]/g, "\\$&").replace(/`/g, "'");
 
 function summarize(rows) {
   const results = rows.filter((r) => r.tier !== "benign");
@@ -126,21 +128,50 @@ function classify(event, p) {
   return error("response contains no recognized decision or context");
 }
 
-function readBaseline(path, mode) {
-  const baselineStat = statSync(path);
+function protectInput(path, label) {
+  const inputStat = statSync(path);
   if (["results.json", "REPORT.md"].some((file) => {
     if (!existsSync(file)) return false;
     const outputStat = statSync(file);
-    return outputStat.dev === baselineStat.dev && outputStat.ino === baselineStat.ino;
+    return outputStat.dev === inputStat.dev && outputStat.ino === inputStat.ino;
   }))
-    throw new Error("Baseline would be overwritten. Copy it to a separate baseline file first.");
+    throw new Error(`${label} would be overwritten. Copy it to a separate input file first.`);
+}
+
+function readCorpus(path) {
+  protectInput(path, "Corpus");
+  const data = JSON.parse(readFileSync(path, "utf8"));
+  if (data?.schemaVersion !== 1 || !Array.isArray(data.cases) || !data.cases.length ||
+      Object.keys(data).some((key) => !["schemaVersion", "cases"].includes(key)))
+    throw new Error("Corpus must have schemaVersion 1 and a nonempty cases array");
+  const fields = ["id", "cat", "target", "tier", "event", "tool_name", "tool_input", "tool_response", "coverage", "note", "expect"];
+  const seen = new Set();
+  return data.cases.map((c) => {
+    const benign = c?.tier === "benign";
+    const coverage = c?.coverage === undefined ? (benign ? "benign" : "exploratory") : c.coverage;
+    if (!c || typeof c !== "object" || Array.isArray(c) || Object.keys(c).some((key) => !fields.includes(key)) ||
+        ["id", "cat", "target", "tool_name"].some((key) => typeof c[key] !== "string" || !c[key].trim()) || seen.has(c.id) ||
+        !["direct", "evasion", "benign"].includes(c.tier) || !["PreToolUse", "PostToolUse"].includes(c.event) ||
+        !c.tool_input || typeof c.tool_input !== "object" || Array.isArray(c.tool_input) ||
+        typeof c.expect !== "string" || !Object.hasOwn(rank, c.expect) || (benign && c.expect !== "ALLOW") ||
+        !(benign ? coverage === "benign" : ["documented", "exploratory"].includes(coverage)) ||
+        (c.note !== undefined && typeof c.note !== "string"))
+      throw new Error(`Invalid or duplicate corpus case: ${plain(c?.id ?? "unknown")}`);
+    seen.add(c.id);
+    return { ...c, coverage, note: c.note ?? "" };
+  });
+}
+
+function readBaseline(path, mode) {
+  protectInput(path, "Baseline");
   const data = JSON.parse(readFileSync(path, "utf8"));
   if (!Array.isArray(data) && data?.schemaVersion !== 1) throw new Error("Unsupported baseline schema");
   if (!Array.isArray(data) && ![undefined, "combined", "isolated"].includes(data.mode)) throw new Error("Invalid baseline mode");
   if ((data.mode ?? "combined") !== mode) throw new Error("Baseline mode must match this run");
   const attacks = Array.isArray(data) ? data : data.results;
   const controls = Array.isArray(data) ? [] : data.controls ?? [];
-  if (!Array.isArray(attacks) || !attacks.length || !Array.isArray(controls)) throw new Error("Baseline must contain results and a valid controls array");
+  if (!Array.isArray(attacks) || !Array.isArray(controls) || !attacks.length && !controls.length)
+    throw new Error("Baseline must contain nonempty results or controls");
   const rows = [...attacks, ...controls];
   const seen = new Set();
   return rows.map((r) => {
@@ -148,7 +179,8 @@ function readBaseline(path, mode) {
     if (!r || typeof r.id !== "string" || !r.id || seen.has(r.id) || typeof r.cat !== "string" ||
         !["PreToolUse", "PostToolUse"].includes(r.event) || typeof r.tool_name !== "string" ||
         !r.tool_input || typeof r.tool_input !== "object" || Array.isArray(r.tool_input) ||
-        !Object.hasOwn(rank, verdict) || (Array.isArray(data) ? false :
+        !Object.hasOwn(rank, verdict) || (r.expect !== undefined && (typeof r.expect !== "string" || !Object.hasOwn(rank, r.expect))) ||
+        (Array.isArray(data) ? false :
           (controls.includes(r) ? r.tier !== "benign" : r.tier === "benign")))
       throw new Error(`Invalid or duplicate baseline case: ${r?.id ?? "unknown"}`);
     seen.add(r.id);
@@ -159,19 +191,23 @@ function readBaseline(path, mode) {
 function main() {
   const { values: options } = parseArgs({ options: {
     cat: { type: "string" }, baseline: { type: "string" }, ci: { type: "boolean" },
-    isolate: { type: "boolean" },
+    isolate: { type: "boolean" }, corpus: { type: "string" },
     help: { type: "boolean", short: "h" },
   } });
   if (options.help) {
-    console.log("Usage: node run.mjs [--cat <category>] [--isolate] [--baseline <file>] [--ci]\n" +
+    console.log("Usage: node run.mjs [--corpus <file.json>] [--cat <category>] [--isolate] [--baseline <file>] [--ci]\n" +
+      "--corpus replaces built-in cases with a JSON suite containing exact expected verdicts.\n" +
       "--isolate tests only each case's target policy in a temporary home.\n" +
-      "--ci requires --baseline. Exit: 0 success, 1 regression, 2 invalid run/comparison.\n" +
-      `Categories: ${[...new Set([...CORPUS, ...CONTROLS].map((c) => c.cat))].join(", ")}`);
+      "--ci requires --baseline or --corpus. Exit: 0 success, 1 regression/expectation failure, 2 invalid run/comparison.\n" +
+      `Built-in categories: ${[...new Set([...CORPUS, ...CONTROLS].map((c) => c.cat))].join(", ")}. Custom categories come from the suite.`);
     return;
   }
-  if (options.ci && !options.baseline) throw new Error("--ci requires --baseline <file>");
+  for (const option of ["corpus", "baseline"])
+    if (options[option] !== undefined && !options[option].trim()) throw new Error(`--${option} requires a nonempty file path`);
+  if (options.ci && !options.baseline && !options.corpus) throw new Error("--ci requires --baseline <file> or --corpus <file.json>");
   const mode = options.isolate ? "isolated" : "combined";
-  const cases = [...CORPUS, ...CONTROLS].filter((c) => options.cat === undefined || c.cat === options.cat);
+  const source = options.corpus ? readCorpus(options.corpus) : [...CORPUS, ...CONTROLS];
+  const cases = source.filter((c) => options.cat === undefined || c.cat === options.cat);
   if (!cases.length) throw new Error(`Unknown category: ${options.cat}`);
   // Read before running or writing artifacts, so bad input preserves existing results.
   const baseline = options.baseline ? readBaseline(options.baseline, mode).filter((r) => !options.cat || r.cat === options.cat) : null;
@@ -183,13 +219,16 @@ function main() {
     const payload = {
       session_id: "chaos", cwd: isolation?.context.cwd ?? process.cwd(), hook_event_name: c.event,
       tool_name: c.tool_name, tool_input: c.tool_input,
-      ...(c.tool_response ? { tool_response: c.tool_response } : {}),
+      ...(c.tool_response !== undefined ? { tool_response: c.tool_response } : {}),
     };
     const result = { ...c, ...classify(c.event, invoke(["--hook", c.event, "--cli", "claude"], JSON.stringify(payload), isolation?.context)) };
     return { ...result, held: held(result) };
   });
   const results = rows.filter((r) => r.tier !== "benign");
   const controls = rows.filter((r) => r.tier === "benign");
+  const mismatches = options.corpus ? rows.filter((r) => r.verdict !== r.expect) : [];
+  const expectations = options.corpus ? { total: rows.length, passed: rows.length - mismatches.length, failed: mismatches.length,
+    mismatches: mismatches.map((r) => ({ id: r.id, expected: r.expect, actual: r.verdict })) } : null;
   const summary = summarize(rows);
   const cats = [...new Set(cases.map((c) => c.cat))];
   const categories = Object.fromEntries(cats.map((cat) => [cat, summarize(rows.filter((r) => r.cat === cat))]));
@@ -214,8 +253,8 @@ function main() {
   const pct = valid ? `${((summary.held / valid) * 100).toFixed(0)}%` : "n/a";
   console.log(`\nfailproof chaos monkey · engine ${engine.version} · ${mode} · ${results.length} attacks + ${controls.length} controls\n`);
   for (const [cat, s] of Object.entries(categories)) {
-    console.log(`${cat} (${s.held}/${s.total} attacks held · ${s.flagged} notices · ${s.allowed} attacks allowed · ${s.errors} attack errors · ${s.controlsAllowed}/${s.controlsTotal} controls allowed · false positives: ${s.falsePositives} · control errors: ${s.controlErrors})`);
-    for (const r of rows.filter((r) => r.cat === cat)) console.log(`  ${r.verdict.padEnd(8)} ${r.tier.padEnd(7)} ${r.coverage.padEnd(12)} ${r.id.padEnd(11)} ${attack(r).replace(/[\r\n]+/g, " ").slice(0, 60)}`);
+    console.log(`${plain(cat)} (${s.held}/${s.total} attacks held · ${s.flagged} notices · ${s.allowed} attacks allowed · ${s.errors} attack errors · ${s.controlsAllowed}/${s.controlsTotal} controls allowed · false positives: ${s.falsePositives} · control errors: ${s.controlErrors})`);
+    for (const r of rows.filter((r) => r.cat === cat)) console.log(`  ${r.verdict.padEnd(8)} ${r.tier.padEnd(7)} ${r.coverage.padEnd(12)} ${plain(r.id).padEnd(11)} ${plain(attack(r)).slice(0, 60)}`);
     console.log("");
   }
   const score = `${summary.held}/${valid} valid attacks held (${pct}) · ${summary.flagged} flagged · ${summary.allowed} allowed · ${summary.errors} errors`;
@@ -223,13 +262,17 @@ function main() {
   console.log(`evasions: ${summary.evasionsHeld}/${summary.evasionsTotal} held`);
   const controlScore = `${summary.controlsAllowed}/${summary.controlsTotal} controls allowed · false positives: ${summary.falsePositives} · control errors: ${summary.controlErrors}`;
   console.log(controlScore);
-  if (comparison) {
-    console.log(`\nCompared with ${options.baseline}: ${regressions.length} regressions`);
-    for (const r of comparison.changes) console.log(`  ${r.kind} ${r.id}: ${r.before} -> ${r.after}`);
-    if (comparison.unbaselined.length) console.log(`  New or changed payloads need review: ${comparison.unbaselined.join(", ")}`);
-    if (comparison.removed.length) console.log(`  Removed cases need review: ${comparison.removed.join(", ")}`);
+  if (expectations) {
+    console.log(`\nExpectations: ${expectations.passed}/${expectations.total} passed · ${expectations.failed} failed`);
+    for (const r of mismatches) console.log(`  MISMATCH ${plain(r.id)}: expected ${r.expect}, got ${r.verdict}: ${plain(r.reason)}`);
   }
-  for (const r of rows.filter((r) => r.verdict === "ERROR")) console.error(`ERROR ${r.id}: ${r.reason}`);
+  if (comparison) {
+    console.log(`\nCompared with ${plain(options.baseline)}: ${regressions.length} regressions`);
+    for (const r of comparison.changes) console.log(`  ${r.kind} ${plain(r.id)}: ${r.before} -> ${r.after}`);
+    if (comparison.unbaselined.length) console.log(`  New or changed payloads/expectations need review: ${plain(comparison.unbaselined.join(", "))}`);
+    if (comparison.removed.length) console.log(`  Removed cases need review: ${plain(comparison.removed.join(", "))}`);
+  }
+  for (const r of rows.filter((r) => r.verdict === "ERROR")) console.error(`ERROR ${plain(r.id)}: ${plain(r.reason)}`);
 
   const md = ["# failproof chaos monkey — results\n",
     `Engine: \`${cell(engine.binary)}\` **${cell(engine.version)}**. Generated: ${new Date().toISOString()}.\n`,
@@ -237,40 +280,48 @@ function main() {
     `Mode: **${mode}**. **${controlScore}**.\n`,
     "Payloads are sent to the hook engine. Attack commands are never executed by this harness.\n",
     "Held means DENY or ASK. FLAG and INSTRUCT are notices; redaction is not verified. Errors are excluded from the held percentage.\n",
-    "Coverage: documented probes match the pinned policy's stated operation and tool scope; exploratory probes test variants whose promised coverage is unconfirmed. Labels describe test intent, independent of which policies are enabled. They do not change scores or CI comparisons.\n"];
+    options.corpus
+      ? "Coverage: labels are authored in the custom suite. Documented coverage requires review against the tested policy's declared scope; attacks default to exploratory. Labels do not change scores or CI comparisons.\n"
+      : "Coverage: documented probes match the pinned policy's stated operation and tool scope; exploratory probes test variants whose promised coverage is unconfirmed. Labels describe test intent, independent of which policies are enabled. They do not change scores or CI comparisons.\n"];
+  if (expectations) {
+    md.push("## Expected decisions\n", `**${expectations.passed}/${expectations.total} passed · ${expectations.failed} failed.** Expectations are exact; a saved baseline cannot override a mismatch.\n`,
+      "| id | expected | actual | reason |", "|----|----------|--------|--------|");
+    for (const r of rows) md.push(`| ${cell(r.id)} | ${r.expect} | ${r.verdict} | ${cell(r.reason)} |`);
+    md.push("");
+  }
   md.push("## Category summary\n", "| category | attacks held | notices | attacks allowed | attack errors | controls allowed | false positives | control errors |",
     "|----------|--------------|---------|-----------------|---------------|------------------|-----------------|----------------|");
   for (const [cat, s] of Object.entries(categories)) {
-    md.push(`| ${cat} | ${s.held}/${s.total} | ${s.flagged} | ${s.allowed} | ${s.errors} | ${s.controlsAllowed}/${s.controlsTotal} | ${s.falsePositives} | ${s.controlErrors} |`);
+    md.push(`| ${cell(cat)} | ${s.held}/${s.total} | ${s.flagged} | ${s.allowed} | ${s.errors} | ${s.controlsAllowed}/${s.controlsTotal} | ${s.falsePositives} | ${s.controlErrors} |`);
   }
   md.push("");
   md.push("## Allowed attacks\n", "| id | coverage | target policy | attack | technique |", "|----|----------|---------------|--------|-----------|");
   for (const r of results.filter((r) => r.verdict === "ALLOW"))
-    md.push(`| ${r.id} | ${r.coverage} | ${cell(r.target)} | ${cell(attack(r))} | ${cell(r.note)} |`);
+    md.push(`| ${cell(r.id)} | ${r.coverage} | ${cell(r.target)} | ${cell(attack(r))} | ${cell(r.note)} |`);
   if (!summary.allowed) md.push("\nNo attacks received an ALLOW verdict.\n");
   const example = !options.isolate && results.find((r) => r.verdict === "ALLOW");
   if (example) {
     md.push("\nReproduce the first allowed decision (payload only):\n", "```bash",
       `failproofai --hook ${example.event} <<'PAYLOAD'`,
       JSON.stringify({ cwd: ".", hook_event_name: example.event, tool_name: example.tool_name,
-        tool_input: example.tool_input, ...(example.tool_response ? { tool_response: example.tool_response } : {}) }),
+        tool_input: example.tool_input, ...(example.tool_response !== undefined ? { tool_response: example.tool_response } : {}) }),
       "PAYLOAD", "```\n");
   }
   md.push("\n## Benign controls\n", "Any notice, DENY, or ASK on these payloads counts as a false positive. Errors are invalid measurements.\n",
     "| verdict | category | id | target policy | payload | reason | note |", "|---------|----------|----|---------------|---------|--------|------|");
-  for (const r of controls) md.push(`| ${r.verdict} | ${r.cat} | ${r.id} | ${cell(r.target)} | ${cell(attack(r))} | ${cell(r.reason)} | ${cell(r.note)} |`);
+  for (const r of controls) md.push(`| ${r.verdict} | ${cell(r.cat)} | ${cell(r.id)} | ${cell(r.target)} | ${cell(attack(r))} | ${cell(r.reason)} | ${cell(r.note)} |`);
   if (comparison) {
     md.push("\n## Baseline comparison\n", `Baseline: \`${cell(options.baseline)}\`. **${regressions.length} regressions**.\n`,
       "| change | id | before | after |", "|--------|----|--------|-------|");
-    for (const r of comparison.changes) md.push(`| ${r.kind} | ${r.id} | ${r.before} | ${r.after} |`);
-    md.push(`\nNew or changed payloads: ${comparison.unbaselined.join(", ") || "none"}.`,
-      `Removed cases: ${comparison.removed.join(", ") || "none"}.\n`);
+    for (const r of comparison.changes) md.push(`| ${r.kind} | ${cell(r.id)} | ${r.before} | ${r.after} |`);
+    md.push(`\nNew or changed payloads/expectations: ${cell(comparison.unbaselined.join(", ")) || "none"}.`,
+      `Removed cases: ${cell(comparison.removed.join(", ")) || "none"}.\n`);
   }
   md.push("\n## Full results by category\n");
   for (const cat of cats) {
-    md.push(`### ${cat}\n`, "| verdict | tier | coverage | id | attack | reason / note |", "|---------|------|----------|----|--------|---------------|");
+    md.push(`### ${cell(cat)}\n`, "| verdict | tier | coverage | id | attack | reason / note |", "|---------|------|----------|----|--------|---------------|");
     for (const r of results.filter((r) => r.cat === cat))
-      md.push(`| ${r.verdict} | ${r.tier} | ${r.coverage} | ${r.id} | ${cell(attack(r))} | ${cell(r.reason || r.note).slice(0, 160)} |`);
+      md.push(`| ${r.verdict} | ${r.tier} | ${r.coverage} | ${cell(r.id)} | ${cell(attack(r))} | ${cell(plain(r.reason || r.note).slice(0, 160))} |`);
     md.push("");
   }
   md.push("## Policy configuration\n", "Source configuration captured from `failproofai policies`. Agent wiring status does not affect these direct hook calls.\n",
@@ -281,14 +332,15 @@ function main() {
     "Environment-dependent stop gates are outside this corpus.\n");
   writeFileSync("results.json", JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), engine,
     policies, mode, isolation: isolation ? { packs: isolation.packs } : null,
-    category: options.cat ?? null, summary, categories, results, controls, comparison }, null, 2) + "\n");
+    category: options.cat ?? null, summary, categories, results, controls, comparison, expectations }, null, 2) + "\n");
   writeFileSync("REPORT.md", md.join("\n"));
   console.log("\nwrote REPORT.md and results.json");
-  process.exitCode = summary.errors || summary.controlErrors || (options.ci && incomplete) ? 2 : options.ci && regressions.length ? 1 : 0;
+  process.exitCode = summary.errors || summary.controlErrors || (options.ci && incomplete) ? 2
+    : options.ci && (regressions.length || mismatches.length) ? 1 : 0;
 }
 
 try { main(); } catch (error) {
-  console.error(`ERROR: ${error.message}`);
+  console.error(`ERROR: ${plain(error.message)}`);
   process.exitCode = 2;
 } finally {
   if (isolationDir) rmSync(isolationDir, { recursive: true, force: true });

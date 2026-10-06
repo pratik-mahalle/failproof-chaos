@@ -63,6 +63,26 @@ jobs:
           mkdir -p reports/isolated
           cd reports/isolated
           node ../../run.mjs --isolate --baseline ../../baselines/isolated.json --ci
+      - name: Check the custom suite with all policies
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p reports/custom-all/.failproofai
+          cd reports/custom-all
+          node ../../run.mjs --corpus ../../examples/team-cases.json --ci
+      - name: Check the custom suite with default policies
+        if: ${{ !cancelled() }}
+        env:
+          FAILPROOFAI_HOME: ${{ runner.temp }}/failproof-defaults
+        run: |
+          mkdir -p reports/custom-defaults/.failproofai
+          cd reports/custom-defaults
+          node ../../run.mjs --corpus ../../examples/team-cases.json --ci
+      - name: Check the custom suite with isolated policies
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p reports/custom-isolated
+          cd reports/custom-isolated
+          node ../../run.mjs --corpus ../../examples/team-cases.json --isolate --ci
       - name: Upload profile reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

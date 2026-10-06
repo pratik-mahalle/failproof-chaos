@@ -2,17 +2,19 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CORPUS, CONTROLS } from "./corpus.mjs";
 
-const work = mkdtempSync(join(tmpdir(), "failproof-check-"));
+const work = realpathSync(mkdtempSync(join(tmpdir(), "failproof-check-")));
 const engine = join(work, "engine.mjs");
 const baseline = join(work, "baseline.json");
 const runner = fileURLToPath(new URL("./run.mjs", import.meta.url));
 const resultsFile = join(work, "results.json");
+const callsFile = join(work, "engine-calls.txt");
+const capturedFile = join(work, "captured.json");
 const read = () => JSON.parse(readFileSync(resultsFile, "utf8"));
 function run(args = ["--cat", "sudo"], mode = "normal", binary = engine) {
   return spawnSync(process.execPath, [runner, ...args], {
@@ -23,12 +25,14 @@ function run(args = ["--cat", "sudo"], mode = "normal", binary = engine) {
 
 try {
   writeFileSync(engine, `#!${process.execPath}
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 const mode = process.env.CHECK_MODE;
+appendFileSync('${callsFile}', process.argv[2] + '\\n');
 if (process.argv[2] === '--version') { console.log('9.8.7'); process.exit(0); }
 if (process.argv[2] === 'policies') { console.log('test policies: pack@abc, 3 enabled'); process.exit(0); }
 const input = JSON.parse(readFileSync(0, 'utf8'));
 const command = input.tool_input.command;
+if (mode === 'capture') writeFileSync('${capturedFile}', JSON.stringify(input));
 const emit = (out) => { console.log(JSON.stringify(out)); process.exit(0); };
 if (mode === 'crash') { console.error('engine crashed'); process.exit(1); }
 if (mode === 'signal') { process.kill(process.pid, 'SIGTERM'); }
@@ -47,12 +51,15 @@ if (mode === 'isolation') {
   if (manifest.packs.length !== 1 || manifest.packs[0].enabled.length !== 1 || input.cwd !== process.cwd() || !existsSync(input.cwd + '/.failproofai')) process.exit(1);
   writeFileSync('${join(work, "isolated-cwd.txt")}', input.cwd);
   const target = manifest.packs[0].enabled[0];
+  if (input.tool_name === 'Read' && input.tool_input.file_path === '.env') emit({ decision: 'block', reason: target });
+  if (!command) process.exit(0);
   if (command.includes('--force-with-lease') && target === 'block-force-push') process.exit(0);
   if (command.startsWith('git push') && !command.includes('feature/')) {
     emit({ decision: 'block', reason: target });
   }
   process.exit(0);
 }
+if (mode === 'team-example' && input.tool_name === 'Read' && input.tool_input.file_path === '.env') emit({ decision: 'block', reason: 'protected environment file' });
 if (command === 'echo sudo') {
   if (mode === 'false-positive') emit({ decision: 'block', reason: 'false positive' });
   if (mode === 'control-warn') emit({ hookSpecificOutput: { additionalContext: 'false notice' } });
@@ -79,6 +86,7 @@ process.exit(0);
   const initial = read();
   assert.equal(initial.results.length, CORPUS.length);
   assert.equal(initial.schemaVersion, 1);
+  assert.equal(initial.expectations, null);
   assert.equal(initial.mode, "combined");
   assert.equal(initial.controls.length, CONTROLS.length);
   assert.equal(initial.summary.controlsAllowed, CONTROLS.length);
@@ -252,7 +260,169 @@ process.exit(0);
   assert.equal(readFileSync(resultsFile, "utf8"), previousArtifacts);
   assert.equal(run(["--help"], "normal", join(work, "missing-engine")).status, 0);
   assert.match(readFileSync(join(work, "REPORT.md"), "utf8"), /redaction is not verified/);
-  console.log("CLI checks passed: coverage labels, category scores, file-write controls, isolation, baselines, CI exits, and errors.");
+  // A team's expectations catch known failures independently of the saved baseline.
+  const corpusFile = join(work, "team-cases.json");
+  const example = JSON.parse(readFileSync(new URL("./examples/team-cases.json", import.meta.url), "utf8"));
+  const suite = { schemaVersion: 1, cases: [
+    { id: "unsafe", cat: "team-risk", target: "block-sudo", tier: "direct", event: "PreToolUse",
+      tool_name: "Bash", tool_input: { command: "sudo rm /var/log/syslog" }, expect: "DENY" },
+    { id: "ordinary", cat: "team-work", target: "block-sudo", tier: "benign", event: "PreToolUse",
+      tool_name: "Bash", tool_input: { command: "echo sudo" }, expect: "ALLOW" },
+  ] };
+  const customCI = ["--corpus", corpusFile, "--ci"];
+  const customBaselineCI = [...customCI, "--baseline", baseline];
+  writeFileSync(corpusFile, JSON.stringify(suite));
+  assert.equal(run(customCI).status, 0);
+  assert.equal(read().results.length, 1); // custom suites replace the built-in cases
+  assert.equal(read().controls.length, 1);
+  assert.equal(read().results[0].coverage, "exploratory");
+  assert.equal(read().controls[0].coverage, "benign");
+  assert.equal(read().results[0].note, "");
+  assert.deepEqual(read().expectations, { total: 2, passed: 2, failed: 0, mismatches: [] });
+  writeFileSync(baseline, JSON.stringify(read()));
+  const slip = run(customBaselineCI, "slip");
+  assert.equal(slip.status, 1);
+  assert.match(slip.stdout, /MISMATCH unsafe: expected DENY, got ALLOW/);
+  assert.deepEqual(read().expectations.mismatches, [{ id: "unsafe", expected: "DENY", actual: "ALLOW" }]);
+  assert.match(readFileSync(join(work, "REPORT.md"), "utf8"), /\| unsafe \| DENY \| ALLOW \|/);
+  assert.doesNotMatch(readFileSync(join(work, "REPORT.md"), "utf8"), /pinned policy's/);
+  writeFileSync(baseline, JSON.stringify(read())); // saving the failed result cannot silence the expectation
+  assert.equal(run(customBaselineCI, "slip").status, 1);
+  assert.equal(read().comparison.changes.length, 0);
+  assert.equal(run(["--corpus", corpusFile], "slip").status, 0); // inspection still shows the mismatch
+  assert.equal(read().expectations.failed, 1);
+  for (const [mode, actual] of [["ask", "ASK"], ["warn", "INSTRUCT"]]) {
+    assert.equal(run(customCI, mode).status, 1);
+    assert.equal(read().expectations.mismatches[0].actual, actual);
+  }
+  for (const mode of ["false-positive", "control-warn"]) {
+    assert.equal(run(customCI, mode).status, 1);
+    assert.equal(read().expectations.mismatches[0].id, "ordinary");
+    assert.equal(read().summary.falsePositives, 1);
+    writeFileSync(baseline, JSON.stringify(read()));
+    assert.equal(run(customBaselineCI, mode).status, 1);
+    assert.equal(read().comparison.changes.length, 0);
+  }
+  assert.equal(run(customCI, "control-error").status, 2); // errors take precedence
+  assert.equal(read().summary.controlErrors, 1);
+  assert.equal(read().expectations.mismatches[0].actual, "ERROR");
+  assert.equal(run(customCI, "crash").status, 2);
+  assert.equal(read().expectations.failed, 2);
+
+  assert.equal(run([...customCI, "--cat", "team-work"]).status, 0);
+  assert.equal(read().results.length, 0);
+  assert.equal(read().controls.length, 1);
+  assert.equal(read().expectations.total, 1);
+  writeFileSync(baseline, JSON.stringify(read()));
+  assert.equal(run([...customBaselineCI, "--cat", "team-work"]).status, 0);
+  assert.equal(run([...customCI, "--cat", "team-risk"]).status, 0);
+  assert.equal(read().controls.length, 0);
+  writeFileSync(baseline, JSON.stringify(read()));
+  assert.equal(run([...customBaselineCI, "--cat", "team-risk"]).status, 0);
+  for (const cases of [[suite.cases[0]], [suite.cases[1]]]) {
+    writeFileSync(corpusFile, JSON.stringify({ schemaVersion: 1, cases }));
+    assert.equal(run(customCI).status, 0);
+    writeFileSync(baseline, JSON.stringify(read()));
+    assert.equal(run(customBaselineCI).status, 0);
+  }
+
+  writeFileSync(corpusFile, JSON.stringify(suite));
+  assert.equal(run(customCI).status, 0);
+  const customInitial = read();
+  writeFileSync(baseline, JSON.stringify(customInitial));
+  for (const changed of [
+    { ...suite, cases: [{ ...suite.cases[0], expect: "ASK" }, suite.cases[1]] },
+    { ...suite, cases: [{ ...suite.cases[0], tool_input: { command: "echo changed" } }, suite.cases[1]] },
+    { ...suite, cases: [{ ...suite.cases[0], tool_response: null }, suite.cases[1]] },
+    { ...suite, cases: [...suite.cases, { ...suite.cases[1], id: "new" }] },
+    { ...suite, cases: [suite.cases[0]] },
+  ]) {
+    writeFileSync(corpusFile, JSON.stringify(changed));
+    assert.equal(run(customBaselineCI).status, 2);
+    assert.ok(read().comparison.unbaselined.length || read().comparison.removed.length);
+  }
+
+  // Exercise every exact verdict, including PostToolUse notices and unknown tools.
+  const notices = { schemaVersion: 1, cases: [
+    { ...suite.cases[0], id: "notice", expect: "INSTRUCT", tool_input: { command: "command sudo apt install x" } },
+    { ...suite.cases[0], id: "output", event: "PostToolUse", expect: "FLAG", tool_input: { command: "cat sample" }, tool_response: { stdout: "synthetic credential" } },
+  ] };
+  writeFileSync(corpusFile, JSON.stringify(notices));
+  assert.equal(run(customCI).status, 0);
+  assert.equal(read().summary.held, 0);
+  assert.equal(read().summary.flagged, 2);
+  writeFileSync(corpusFile, JSON.stringify({ ...suite, cases: [{ ...suite.cases[0], expect: "ASK" }] }));
+  assert.equal(run(customCI, "ask").status, 0);
+
+  const sentinel = join(work, "payload-executed.txt");
+  const text = "<script>hello</script>|[link](https://example.com)*_`\\\\\nnext";
+  const dataOnly = { schemaVersion: 1, cases: [
+    { ...suite.cases[1], id: text, cat: text, target: text, note: text,
+      tool_input: { command: `printf executed > ${JSON.stringify(sentinel)}` } },
+    { ...suite.cases[1], id: "write-data", tool_name: "Write", tool_input: { file_path: sentinel, content: text } },
+    { ...suite.cases[1], id: "unknown-tool", tool_name: "mcp__demo__lookup", tool_input: { query: text }, tool_response: false },
+  ] };
+  writeFileSync(corpusFile, JSON.stringify(dataOnly));
+  assert.equal(run(customCI, "capture").status, 0);
+  assert.equal(existsSync(sentinel), false);
+  const captured = JSON.parse(readFileSync(capturedFile, "utf8"));
+  assert.deepEqual(captured.tool_input, dataOnly.cases[2].tool_input);
+  assert.equal(captured.tool_response, false);
+  assert.equal(captured.cwd, work);
+  const customReport = readFileSync(join(work, "REPORT.md"), "utf8");
+  assert.doesNotMatch(customReport, /<script>|\[link\]\(https:\/\/example.com\)/);
+  assert.match(customReport, /&lt;script&gt;/);
+  assert.ok(customReport.includes("\\[link\\]\\(https://example.com\\)"));
+  assert.equal(read().controls[0].note, text); // JSON retains the exact original data
+
+  writeFileSync(corpusFile, JSON.stringify(example));
+  assert.equal(run(customCI, "team-example").status, 0);
+  writeFileSync(manifestFile, JSON.stringify(manifest));
+  assert.equal(run([...customCI, "--isolate"], "isolation").status, 0);
+  writeFileSync(baseline, JSON.stringify(read()));
+  assert.equal(run([...customBaselineCI, "--isolate"], "isolation").status, 0);
+  assert.deepEqual(JSON.parse(readFileSync(manifestFile, "utf8")), manifest);
+  assert.equal(existsSync(readFileSync(join(work, "isolated-cwd.txt"), "utf8")), false);
+  writeFileSync(corpusFile, JSON.stringify({ ...suite, cases: [{ ...suite.cases[0], target: "custom-file-only" }] }));
+  const missingTarget = run([...customCI, "--isolate"], "isolation");
+  assert.equal(missingTarget.status, 2);
+  assert.match(missingTarget.stderr, /exactly one installed pack/);
+
+  const savedResults = readFileSync(resultsFile, "utf8");
+  const savedReport = readFileSync(join(work, "REPORT.md"), "utf8");
+  const savedCalls = readFileSync(callsFile, "utf8");
+  const badCases = [
+    null, [], {}, { ...suite.cases[0], expect: undefined }, { ...suite.cases[0], expect: "ERROR" },
+    { ...suite.cases[0], expect: ["DENY"] }, { ...suite.cases[1], expect: "DENY" },
+    { ...suite.cases[0], tool_input: [] }, { ...suite.cases[0], tool_input: null },
+    { ...suite.cases[0], tool_name: " " }, { ...suite.cases[0], target: "" },
+    { ...suite.cases[0], event: "Stop" }, { ...suite.cases[0], tier: "unknown" },
+    { ...suite.cases[0], coverage: "benign" }, { ...suite.cases[0], coverage: null }, { ...suite.cases[1], coverage: "documented" },
+    { ...suite.cases[0], note: {} }, { ...suite.cases[0], expected: "DENY" },
+  ];
+  for (const invalid of [null, [], {}, { schemaVersion: 2, cases: suite.cases }, { schemaVersion: 1, cases: [] },
+    { ...suite, extra: true }, { ...suite, cases: [suite.cases[0], suite.cases[0]] },
+    ...badCases.map((bad) => ({ ...suite, cases: [suite.cases[1], bad] }))]) {
+    writeFileSync(corpusFile, JSON.stringify(invalid));
+    assert.equal(run([...customCI, "--cat", "team-work"]).status, 2); // invalid cases outside the filter still fail
+  }
+  writeFileSync(corpusFile, "not json");
+  assert.equal(run(customCI).status, 2);
+  assert.equal(run(["--corpus", join(work, "missing.json"), "--ci"]).status, 2);
+  writeFileSync(corpusFile, JSON.stringify(suite));
+  assert.equal(run([...customCI, "--cat", "absent"]).status, 2);
+  for (const path of [resultsFile, join(work, "REPORT.md"), join(work, "alias.json"), join(work, "hardlink.json")])
+    assert.equal(run(["--corpus", path, "--ci"]).status, 2);
+  writeFileSync(baseline, JSON.stringify({ ...customInitial, results: [{ ...customInitial.results[0], expect: "ERROR" }] }));
+  assert.equal(run(customBaselineCI).status, 2);
+  assert.equal(run(["--corpus"]).status, 2);
+  assert.equal(run(["--corpus", "", "--baseline", baseline, "--ci"]).status, 2);
+  assert.equal(run([...customCI, "--baseline", ""]).status, 2);
+  assert.equal(run(["--help", "--corpus", join(work, "missing.json")], "normal", join(work, "missing-engine")).status, 0);
+  assert.equal(readFileSync(resultsFile, "utf8"), savedResults);
+  assert.equal(readFileSync(join(work, "REPORT.md"), "utf8"), savedReport);
+  assert.equal(readFileSync(callsFile, "utf8"), savedCalls);
+  console.log("CLI checks passed: custom suites, exact expectations, payload safety, coverage, isolation, baselines, CI exits, and errors.");
 } finally {
   rmSync(work, { recursive: true, force: true });
 }
