@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.2.0 — coverage labels and CI report artifacts
+
+- Add harmless Edit and shell-write controls paired with the existing risky file-write variants. The corpus now has 55 attacks and 44 controls; all 97 v1.1 payloads retain their decisions.
+- Label documented operations and exploratory coverage boundaries in JSON rows, console output, and Markdown tables. Labels reference the pinned pack's declared operation and tool/event scope. They leave scores, payload comparisons, and CI exits unchanged; legacy baselines may omit them.
+- Preserve all/default/isolated reports in separate CI directories and upload one artifact per matrix job. Remaining profiles continue after a failed comparison, and uploading runs even after failures. Pin the official upload action to its v7.0.1 commit.
+- Review the two new control IDs as ALLOW on both engines in all three profiles before updating snapshots. All-policy/isolation controls: **37/44 allowed, 7 false positives**. Defaults: **43/44 allowed, 1 false positive**. Attack scores remain unchanged, with zero engine errors.
+
 ## v1.1.0 — category scores and file-write coverage
 
 - Add eight `file-write` probes for protected filenames, Edit/shell variants, and uppercase/backup extensions. Add two environment-dump probes around the procfs gap.

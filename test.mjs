@@ -64,6 +64,8 @@ if (input.tool_name === 'Write' && input.tool_input.file_path === 'secrets/servi
   emit({ decision: 'block', reason: 'protected filename' });
 }
 if (mode === 'write-false-positive' && input.tool_input.file_path === 'docs/credentials-guide.md') emit({ decision: 'block', reason: 'unwanted documentation block' });
+if (mode === 'edit-false-positive' && input.tool_name === 'Edit' && input.tool_input.file_path === 'README.md') emit({ decision: 'block', reason: 'unwanted edit block' });
+if (mode === 'shell-write-false-positive' && command?.endsWith('> README.md')) emit({ decision: 'block', reason: 'unwanted shell write block' });
 if (command === 'sudo rm /var/log/syslog') {
   if (mode === 'slip') process.exit(0);
   if (mode === 'warn') emit({ hookSpecificOutput: { additionalContext: 'please stop' } });
@@ -90,11 +92,16 @@ process.exit(0);
   assert.equal(initial.results.find((r) => r.id === "sec-01").verdict, "FLAG");
   assert.equal(initial.results.find((r) => r.id === "sec-01").held, false);
   assert.equal(initial.results.find((r) => r.id === "pkg-01").held, false);
+  assert.equal(initial.results.find((r) => r.id === "write-01").coverage, "documented");
+  assert.equal(initial.results.find((r) => r.id === "write-05").coverage, "exploratory");
+  assert.equal(initial.results.find((r) => r.id === "infra-05").coverage, "documented");
+  assert.equal(initial.results.find((r) => r.id === "read-02").coverage, "documented");
+  assert.equal(initial.controls.every((r) => r.coverage === "benign"), true);
   assert.match(readFileSync(join(work, "REPORT.md"), "utf8"), /Authorization: Bearer &lt;TOKEN&gt;/);
   assert.equal(new Set([...CORPUS, ...CONTROLS].map((r) => r.id)).size, CORPUS.length + CONTROLS.length);
   assert.equal(Object.keys(initial.categories).length, 10);
   assert.deepEqual(initial.categories["file-write"], { total: 8, held: 1, flagged: 0, allowed: 7, errors: 0,
-    evasionsHeld: 0, evasionsTotal: 4, controlsTotal: 4, controlsAllowed: 4, falsePositives: 0, controlErrors: 0 });
+    evasionsHeld: 0, evasionsTotal: 4, controlsTotal: 6, controlsAllowed: 6, falsePositives: 0, controlErrors: 0 });
   for (const key of Object.keys(initial.summary))
     assert.equal(Object.values(initial.categories).reduce((sum, s) => sum + s[key], 0), initial.summary[key], key);
   const fileWrite = run(["--cat", "file-write"]);
@@ -103,9 +110,15 @@ process.exit(0);
   assert.deepEqual(read().categories["file-write"], read().summary);
   assert.equal(read().results.find((r) => r.id === "write-05").tool_input.new_string, "NEW DEMO PLACEHOLDER");
   assert.match(fileWrite.stdout, /README\.md <- Public project documentation/);
+  assert.match(fileWrite.stdout, /evasion\s+exploratory\s+write-05/);
+  assert.equal(read().controls.find((r) => r.id === "ok-write-05").tool_name, "Edit");
+  assert.equal(read().controls.find((r) => r.id === "ok-write-06").tool_name, "Bash");
+  assert.match(readFileSync(join(work, "REPORT.md"), "utf8"), /\| write-05 \| exploratory \|/);
   assert.match(readFileSync(join(work, "REPORT.md"), "utf8"), /OLD DEMO PLACEHOLDER -&gt; NEW DEMO PLACEHOLDER/);
-  assert.match(readFileSync(join(work, "REPORT.md"), "utf8"), /\| file-write \| 1\/8 \| 0 \| 7 \| 0 \| 4\/4 \| 0 \| 0 \|/);
-  writeFileSync(baseline, JSON.stringify(initial));
+  assert.match(readFileSync(join(work, "REPORT.md"), "utf8"), /\| file-write \| 1\/8 \| 0 \| 7 \| 0 \| 6\/6 \| 0 \| 0 \|/);
+  const legacyMetadata = { ...initial,
+    results: initial.results.map(({ coverage, ...r }) => r), controls: initial.controls.map(({ coverage, ...r }) => r) };
+  writeFileSync(baseline, JSON.stringify(legacyMetadata));
   const writeCI = ["--cat", "file-write", "--baseline", baseline, "--ci"];
   assert.equal(run(writeCI).status, 0);
   assert.equal(run(writeCI, "write-slip").status, 1);
@@ -113,6 +126,11 @@ process.exit(0);
   assert.equal(run(writeCI, "write-false-positive").status, 1);
   assert.equal(read().categories["file-write"].falsePositives, 1);
   assert.equal(read().categories["file-write"].held, 1); // benign DENY must not improve attack score
+  for (const [mode, id] of [["edit-false-positive", "ok-write-05"], ["shell-write-false-positive", "ok-write-06"]]) {
+    assert.equal(run(writeCI, mode).status, 1);
+    assert.deepEqual(read().comparison.changes, [{ id, before: "ALLOW", after: "DENY", kind: "REGRESSION" }]);
+    assert.equal(read().summary.held, 1);
+  }
   const ci = ["--cat", "sudo", "--baseline", baseline, "--ci"];
   assert.equal(run(ci).status, 0); // known ALLOW and warning do not fail CI
   assert.deepEqual(read().summary, { total: 3, held: 1, flagged: 1, allowed: 1, errors: 0, evasionsHeld: 0, evasionsTotal: 2,
@@ -234,7 +252,7 @@ process.exit(0);
   assert.equal(readFileSync(resultsFile, "utf8"), previousArtifacts);
   assert.equal(run(["--help"], "normal", join(work, "missing-engine")).status, 0);
   assert.match(readFileSync(join(work, "REPORT.md"), "utf8"), /redaction is not verified/);
-  console.log("CLI checks passed: category scores, file-write payloads, controls, isolation, baselines, CI exits, and errors.");
+  console.log("CLI checks passed: coverage labels, category scores, file-write controls, isolation, baselines, CI exits, and errors.");
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

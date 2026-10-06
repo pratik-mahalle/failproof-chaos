@@ -213,10 +213,9 @@ function main() {
   const valid = summary.total - summary.errors;
   const pct = valid ? `${((summary.held / valid) * 100).toFixed(0)}%` : "n/a";
   console.log(`\nfailproof chaos monkey · engine ${engine.version} · ${mode} · ${results.length} attacks + ${controls.length} controls\n`);
-  for (const cat of cats) {
-    const s = categories[cat];
+  for (const [cat, s] of Object.entries(categories)) {
     console.log(`${cat} (${s.held}/${s.total} attacks held · ${s.flagged} notices · ${s.allowed} attacks allowed · ${s.errors} attack errors · ${s.controlsAllowed}/${s.controlsTotal} controls allowed · false positives: ${s.falsePositives} · control errors: ${s.controlErrors})`);
-    for (const r of rows.filter((r) => r.cat === cat)) console.log(`  ${r.verdict.padEnd(8)} ${r.tier.padEnd(7)} ${r.id.padEnd(11)} ${attack(r).replace(/[\r\n]+/g, " ").slice(0, 60)}`);
+    for (const r of rows.filter((r) => r.cat === cat)) console.log(`  ${r.verdict.padEnd(8)} ${r.tier.padEnd(7)} ${r.coverage.padEnd(12)} ${r.id.padEnd(11)} ${attack(r).replace(/[\r\n]+/g, " ").slice(0, 60)}`);
     console.log("");
   }
   const score = `${summary.held}/${valid} valid attacks held (${pct}) · ${summary.flagged} flagged · ${summary.allowed} allowed · ${summary.errors} errors`;
@@ -237,17 +236,17 @@ function main() {
     `**${score}** · **${summary.evasionsHeld}/${summary.evasionsTotal} evasions held**.\n`,
     `Mode: **${mode}**. **${controlScore}**.\n`,
     "Payloads are sent to the hook engine. Attack commands are never executed by this harness.\n",
-    "Held means DENY or ASK. FLAG and INSTRUCT are notices; redaction is not verified. Errors are excluded from the held percentage.\n"];
+    "Held means DENY or ASK. FLAG and INSTRUCT are notices; redaction is not verified. Errors are excluded from the held percentage.\n",
+    "Coverage: documented probes match the pinned policy's stated operation and tool scope; exploratory probes test variants whose promised coverage is unconfirmed. Labels describe test intent, independent of which policies are enabled. They do not change scores or CI comparisons.\n"];
   md.push("## Category summary\n", "| category | attacks held | notices | attacks allowed | attack errors | controls allowed | false positives | control errors |",
     "|----------|--------------|---------|-----------------|---------------|------------------|-----------------|----------------|");
-  for (const cat of cats) {
-    const s = categories[cat];
+  for (const [cat, s] of Object.entries(categories)) {
     md.push(`| ${cat} | ${s.held}/${s.total} | ${s.flagged} | ${s.allowed} | ${s.errors} | ${s.controlsAllowed}/${s.controlsTotal} | ${s.falsePositives} | ${s.controlErrors} |`);
   }
   md.push("");
-  md.push("## Allowed attacks\n", "| id | target policy | attack | technique |", "|----|---------------|--------|-----------|");
+  md.push("## Allowed attacks\n", "| id | coverage | target policy | attack | technique |", "|----|----------|---------------|--------|-----------|");
   for (const r of results.filter((r) => r.verdict === "ALLOW"))
-    md.push(`| ${r.id} | ${cell(r.target)} | ${cell(attack(r))} | ${cell(r.note)} |`);
+    md.push(`| ${r.id} | ${r.coverage} | ${cell(r.target)} | ${cell(attack(r))} | ${cell(r.note)} |`);
   if (!summary.allowed) md.push("\nNo attacks received an ALLOW verdict.\n");
   const example = !options.isolate && results.find((r) => r.verdict === "ALLOW");
   if (example) {
@@ -269,9 +268,9 @@ function main() {
   }
   md.push("\n## Full results by category\n");
   for (const cat of cats) {
-    md.push(`### ${cat}\n`, "| verdict | tier | id | attack | reason / note |", "|---------|------|----|--------|---------------|");
+    md.push(`### ${cat}\n`, "| verdict | tier | coverage | id | attack | reason / note |", "|---------|------|----------|----|--------|---------------|");
     for (const r of results.filter((r) => r.cat === cat))
-      md.push(`| ${r.verdict} | ${r.tier} | ${r.id} | ${cell(attack(r))} | ${cell(r.reason || r.note).slice(0, 160)} |`);
+      md.push(`| ${r.verdict} | ${r.tier} | ${r.coverage} | ${r.id} | ${cell(attack(r))} | ${cell(r.reason || r.note).slice(0, 160)} |`);
     md.push("");
   }
   md.push("## Policy configuration\n", "Source configuration captured from `failproofai policies`. Agent wiring status does not affect these direct hook calls.\n",

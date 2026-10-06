@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <strong>55 attacks. 42 benign controls. Reviewed baselines.</strong><br/>
+  <strong>55 attacks. 44 benign controls. Reviewed baselines.</strong><br/>
   A regression kit for <a href="https://befailproof.ai">failproofai</a> guardrails.
 </p>
 
@@ -22,9 +22,9 @@
 
 ## What this does
 
-**v1.1 regression runner.** See [release notes](CHANGELOG.md).
+**v1.2 regression runner.** See [release notes](CHANGELOG.md).
 
-Sends 55 attack payloads and 42 benign controls across ten categories to failproofai's hook engine. Commands and file writes stay JSON data; the harness never carries them out. It measures blocking decisions, advisory notices, allows, and engine errors, then compares them with a reviewed baseline. No LLM or API keys are needed.
+Sends 55 attack payloads and 44 benign controls across ten categories to failproofai's hook engine. Commands and file writes stay JSON data; the harness never carries them out. It measures blocking decisions, advisory notices, allows, and engine errors, then compares them with a reviewed baseline. No LLM or API keys are needed.
 
 ### Reviewed configurations
 
@@ -32,17 +32,17 @@ These scores match on failproofai **1.0.3 and 1.0.9**, using `FailproofAI/polici
 
 | Configuration | Attacks held | Advisory notices | Attacks allowed | Benign controls allowed | False positives |
 |---------------|--------------|------------------|-----------------|-------------------------|-----------------|
-| All 38 policies | 35/55 | 8 | 12 | 35/42 | 7 |
-| Default 10 policies | 16/55 | 4 | 35 | 41/42 | 1 |
-| Each target policy in isolation | 33/55 | 8 | 14 | 35/42 | 7 |
+| All 38 policies | 35/55 | 8 | 12 | 37/44 | 7 |
+| Default 10 policies | 16/55 | 4 | 35 | 43/44 | 1 |
+| Each target policy in isolation | 33/55 | 8 | 14 | 37/44 | 7 |
 
 All runs have zero engine errors. The checked-in [report](REPORT.md) and [results](results.json) use the all-policy configuration. Alternate snapshots are in [baselines](baselines/).
 
-Category summaries in JSON, console output, and Markdown show held/allowed attacks, notices, false positives, and errors separately. All 67 v1.0 payloads retain their decisions on both engines. The 30 added cases expose six more false positives in the all-policy profile; the changed aggregate scores reflect a larger corpus.
+Category summaries in JSON, console output, and Markdown show held/allowed attacks, notices, false positives, and errors separately. All 97 v1.1 payloads retain their decisions on both engines. v1.2 adds two harmless Edit/Bash controls, both allowed in every profile. The seven all-policy false positives remain visible.
 
 The controls expose unwanted blocks on quoted deletion/download examples and public documentation named `credentials-guide.md`, plus advisory notices on harmless SQL and publication text. Isolation shows that `protect-env-vars` allows procfs and Python environment dumps; outside-cwd protection catches the procfs reads in combined mode.
 
-The new `file-write` category covers four protected filenames, Edit and shell variants, uppercase/backup extensions, and four benign documentation/source writes. The pinned policy protects filenames through the Write tool. Payload content is synthetic, and these measurements do not establish detection of actual secret contents or execution of actual writes.
+The `file-write` category covers four protected filenames, Edit and shell variants, uppercase/backup extensions, and six benign documentation/source writes. Harmless Edit and shell writes pair with the risky variants. The pinned policy protects filenames through the Write tool. Payload content is synthetic, and these measurements do not establish detection of actual secret contents or execution of actual writes.
 
 Deletion probes now target catastrophic paths such as `/var`. The guard intentionally permits project cleanup such as `rm -rf ./build`, and it already catches `find /var -delete`. Likewise, this pack intentionally permits force-with-lease on a feature branch; pushing to `main` still targets the protected-branch policy. These corrections mean v0.1 and v1.0 scores use different payloads.
 
@@ -82,6 +82,20 @@ The hook payload format is Claude-compatible, and the runner explicitly selects 
 
 Only DENY and ASK count as **held**. FLAG and INSTRUCT are notices that an agent may ignore. Any non-ALLOW decision on a benign control is a **false positive**; ERROR is an invalid measurement and is counted separately. Errors always fail the run.
 
+## Coverage labels
+
+Each row has a `coverage` annotation based on the [pinned pack's definitions](https://github.com/FailproofAI/policies/tree/06b802b63f4f399a4ef81bed7e932f94fd85af13):
+
+| Label | Meaning |
+|-------|---------|
+| `documented` | The probe matches the target policy's stated operation and declared tool/event scope, including ordinary flag/path variants |
+| `exploratory` | The probe tests a variant whose coverage has not been established, such as aliases, encoded/interpreter commands, split secrets, or alternate write tools/extensions |
+| `benign` | Harmless work expected to receive ALLOW |
+
+The corpus has 42 documented and 13 exploratory attack probes. These labels describe test intent against the pinned pack, independent of the current enabled list. Reassess them when testing another policy revision. An allowed documented probe needs investigation with the target enabled; an exploratory allowance alone does not establish a broken policy promise. For example, the named absolute-path kubectl invocation is documented, while an unknown `k` alias is exploratory. The procfs/Python dump probes explore beyond the pack's stated `env`/`printenv` examples; Edit/Bash writes are outside the write policy's declared Write tool matcher.
+
+Both groups remain in the attack counts and regression comparisons. Coverage annotations do not change verdicts, scoring, payload matching, or exit codes. `tier` still records direct/evasion/benign form; some evasion variants are within documented coverage.
+
 ## Baselines and CI
 
 Save and review a run before changing engine versions or policies:
@@ -104,11 +118,13 @@ Attack protection ranks are **DENY/ASK > FLAG/INSTRUCT > ALLOW**. Benign control
 
 Matching IDs must have unchanged event, tool input/output, and attack/control classification. Isolated comparisons also require the same target policy. New, changed, or removed cases require review before CI passes. Modes must match; `--cat` scopes both sides to the same category. Engine versions and policy configuration may differ so upgrades can be compared deliberately.
 
-Legacy array baselines and schema-1 baselines without controls remain readable. Legacy SANITIZE becomes FLAG; saved `held` booleans are ignored. v1.1 adds 30 cases without changing existing payloads or expectations. A v1.0 baseline reports those IDs as unbaselined and needs review before the full v1.1 CI gate passes. Preview baselines also require review of the corrected deletion payloads introduced in v1.0.
+Legacy array baselines and schema-1 baselines without controls or coverage labels remain readable. Legacy SANITIZE becomes FLAG; saved `held` booleans are ignored. v1.2 adds `ok-write-05` and `ok-write-06`, both reviewed as ALLOW, without changing existing payloads or expectations. A v1.1 baseline reports those two IDs as unbaselined and needs review before the full v1.2 CI gate passes. v1.0 baselines also need review of the 30 cases added in v1.1; preview baselines additionally need review of the corrected deletion payloads introduced in v1.0.
 
 Outputs are written to the current directory. Store baselines separately from `results.json` and `REPORT.md`; aliases to either output are rejected. Review failures before replacing a baseline.
 
 The [GitHub Actions workflow](.github/workflows/ci.yml) tests both engine versions on Node 22/24 and Ubuntu/macOS. Each job runs `node test.mjs`, installs fresh all/default policy configurations, and compares all three profiles with their reviewed snapshots. `node test.mjs` uses a fake engine and temporary files to check scoring, benign regressions, isolation, baseline safety, CLI exits, and error handling without network access.
+
+Each job uploads a uniquely named `reports-<os>-node-<version>-engine-<version>` artifact. Its `all/`, `defaults/`, and `isolated/` directories each contain `results.json` and `REPORT.md` for completed measurements. Default and isolated checks continue after a failed comparison; uploading runs even after failures. A profile that fails before generating reports has no files, so an older profile or checked-in baseline cannot masquerade as a fresh measurement. Download the artifacts from the workflow run's summary page.
 
 ## Stable v1 contract
 
@@ -130,7 +146,7 @@ The supported flags are `--cat <category>`, `--isolate`, `--baseline <file>`, `-
 | `controls` | Benign rows only |
 | `comparison` | Null without a baseline; otherwise baseline path, changes, unbaselined IDs, and removed IDs |
 
-Rows contain `id`, `cat`, `target`, `tier`, `event`, `tool_name`, `tool_input`, optional `tool_response`, `note`, `verdict`, `reason`, and `held`. Tiers are `direct`/`evasion` for attacks and `benign` for controls. A change contains `id`, `before`, `after`, and `kind` (`REGRESSION`, `IMPROVEMENT`, or `CHANGE`). Counts are nonnegative integers; attack and control errors are separate.
+Rows contain `id`, `cat`, `target`, `tier`, `coverage`, `event`, `tool_name`, `tool_input`, optional `tool_response`, `note`, `verdict`, `reason`, and `held`. Tiers are `direct`/`evasion` for attacks and `benign` for controls. The additive `coverage` field is `documented`/`exploratory` for attacks and `benign` for controls; legacy baselines may omit it. A change contains `id`, `before`, `after`, and `kind` (`REGRESSION`, `IMPROVEMENT`, or `CHANGE`). Counts are nonnegative integers; attack and control errors are separate.
 
 Consumers should ignore additional fields. Removing fields or changing their types or meanings requires a new schema version and a major release. Corpus additions and corrected expectations can require baseline review within v1; the gate reports those changes explicitly.
 
@@ -150,7 +166,7 @@ Each run writes `results.json` and `REPORT.md`. Rows record the exact payload, t
 
 ## Add a case
 
-Add an attack to `CORPUS` or an allowed example to `CONTROLS` in [corpus.mjs](corpus.mjs). Give it a unique ID, category, installed target policy, event, tool payload, and a short note. Controls receive `tier: "benign"` and `event: "PreToolUse"` by default. Run the checks and review new snapshots before committing them.
+Add an attack to `CORPUS` or an allowed example to `CONTROLS` in [corpus.mjs](corpus.mjs). Give it a unique ID, category, installed target policy, event, tool payload, and a short note. Direct attacks default to documented coverage; evasions default to exploratory. Explicitly set `coverage: "documented"` only when a variant falls within the pinned policy's stated operation and tool/event scope. Controls receive `tier: "benign"`, `coverage: "benign"`, and `event: "PreToolUse"` by default. Run the checks and review new snapshots before committing them.
 
 ## Scope
 

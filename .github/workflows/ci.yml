@@ -46,10 +46,28 @@ jobs:
       - name: Compare all policies with the reviewed snapshot
         run: |
           cp results.json "$RUNNER_TEMP/failproof-baseline.json"
-          node run.mjs --baseline "$RUNNER_TEMP/failproof-baseline.json" --ci
+          mkdir -p reports/all/.failproofai
+          cd reports/all
+          node ../../run.mjs --baseline "$RUNNER_TEMP/failproof-baseline.json" --ci
       - name: Compare default policies with their reviewed snapshot
+        if: ${{ !cancelled() }}
         env:
           FAILPROOFAI_HOME: ${{ runner.temp }}/failproof-defaults
-        run: node run.mjs --baseline baselines/defaults.json --ci
+        run: |
+          mkdir -p reports/defaults/.failproofai
+          cd reports/defaults
+          node ../../run.mjs --baseline ../../baselines/defaults.json --ci
       - name: Compare isolated policies with their reviewed snapshot
-        run: node run.mjs --isolate --baseline baselines/isolated.json --ci
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p reports/isolated
+          cd reports/isolated
+          node ../../run.mjs --isolate --baseline ../../baselines/isolated.json --ci
+      - name: Upload profile reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reports-${{ matrix.os }}-node-${{ matrix.node }}-engine-${{ matrix.engine }}
+          path: |
+            reports/*/results.json
+            reports/*/REPORT.md
