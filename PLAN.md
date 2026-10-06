@@ -92,6 +92,8 @@ Then run the existing eight-job matrix: Ubuntu/macOS, Node 22/24, and engines 1.
 
 Done when all jobs pass and each supported profile produces attributable reports.
 
+Validation completed on [the eight-job branch run](https://github.com/pratik-mahalle/failproof-chaos/actions/runs/37435918835) and [the pull request run](https://github.com/pratik-mahalle/failproof-chaos/actions/runs/37436041315). All jobs passed. Review of the branch run's eight artifact bundles confirmed 48 measurements and 96 report files: every built-in decision, classification, and category score matched its reviewed snapshot, and all 48 custom decisions matched their expectations.
+
 ### 4 Validate the workflow with teams
 
 - [x] Prepare a project-root CI recipe and a short guide for converting an incident into a fixture.
@@ -104,8 +106,8 @@ Proposed continuation criterion: at least two teams reuse the suite on another c
 ## Release criteria
 
 - [x] CLI documentation, result fields, failure behavior, and example match the implementation.
-- [ ] All compatibility and matrix checks pass.
+- [x] All compatibility and matrix checks pass.
 - [ ] Pilot feedback supports recurring use.
 - [x] Review the additive contract changes and record them in `CHANGELOG.md` before preparing v1.3.
 
-The next steps are completing matrix validation and running the three-team pilot described in [PILOT.md](PILOT.md).
+The next step is running the three-team pilot described in [PILOT.md](PILOT.md). Release remains conditional on its results.

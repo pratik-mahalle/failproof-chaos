@@ -8,6 +8,8 @@
 - Validate suites before engine calls and report writes, protect corpus output aliases, and escape custom metadata in reports. Payload commands and writes remain data.
 - Check the synthetic team suite in all/default/isolated profiles throughout the existing eight-job matrix. Preserve custom reports alongside built-in reports and add an incident authoring and pilot guide.
 
+All eight jobs pass on engines 1.0.3/1.0.9 and Node 22/24 across Ubuntu/macOS. The 99 built-in cases retain their reviewed decisions and category scores in every profile; both custom expectations pass in all profiles, with zero engine errors. The three-team pilot remains pending before release.
+
 ## v1.2.0 — coverage labels and CI report artifacts
 
 - Add harmless Edit and shell-write controls paired with the existing risky file-write variants. The corpus now has 55 attacks and 44 controls; all 97 v1.1 payloads retain their decisions.
