@@ -87,7 +87,7 @@ Use `{ "schemaVersion": 1, "cases": [...] }` with at least one case. IDs must be
 
 Run from the team's project directory to use its installed policy configuration and cwd. Paths in the suite are payload data; the runner never reads the named files or executes their commands. Isolated mode uses a temporary cwd and requires installed pack targets. Test standalone custom policy files in combined mode. Each case is a separate hook measurement; this workflow does not replay session state.
 
-Fixtures and generated reports contain the supplied payloads. Use synthetic or reviewed redacted examples, preserving the features needed to reproduce the decision. See [the pilot guide](PILOT.md) for incident authoring and a project-root CI recipe.
+Fixtures and generated reports contain the supplied payloads. Use synthetic or reviewed redacted examples, preserving the features needed to reproduce the decision. See [the pilot guide](PILOT.md) for incident authoring, a project-root CI recipe, and results from the initial three-repository trial. Its [unwanted-block rehearsal](examples/pilot-rehearsal.json) intentionally fails with the pinned all-policy pack.
 
 ## Verdicts
 

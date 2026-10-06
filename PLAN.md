@@ -94,14 +94,17 @@ Done when all jobs pass and each supported profile produces attributable reports
 
 Validation completed on [the eight-job branch run](https://github.com/pratik-mahalle/failproof-chaos/actions/runs/37435918835) and [the pull request run](https://github.com/pratik-mahalle/failproof-chaos/actions/runs/37436041315). All jobs passed. Review of the branch run's eight artifact bundles confirmed 48 measurements and 96 report files: every built-in decision, classification, and category score matched its reviewed snapshot, and all 48 custom decisions matched their expectations.
 
-### 4 Validate the workflow with teams
+### 4 Validate the workflow in use
 
 - [x] Prepare a project-root CI recipe and a short guide for converting an incident into a fixture.
-- [ ] Pilot with three teams, each supplying one real incident and at least five legitimate tool calls.
-- [ ] Have each team use the suite during its next policy change.
-- [ ] Record time to first passing run, review effort, actionable findings, and repeat use on another change. Include a deliberately changed policy in the pilot to verify that the gate detects a regression.
+- [x] Prepare and validate suites in three repositories chosen from the owner's GitHub profile, with at least five legitimate calls each and pinned CI integrations.
+- [x] Verify that deliberately disabling a guard in each temporary configuration fails its suite. Rehearse the existing unwanted block and confirm that a saved failing baseline cannot hide it.
+- [ ] Capture a real incident from hook use and use the suite during an actual policy change.
+- [ ] Record authoring and review effort, actionable findings, manual checks saved, and repeat use on another change.
 
-Proposed continuation criterion: at least two teams reuse the suite on another change and report reduced manual checking or an actionable finding. If setup or fixture authoring prevents repeat use, improve that step before expanding coverage. Ask about willingness to pay after teams have used the workflow.
+The initial three-repository trial passed all 21 expectations on both local engine 1.0.3 and CI engine 1.0.9. All three controlled regressions failed as intended. The PRs, source pins, configuration, and limitations are recorded in [PILOT.md](PILOT.md). One owner's seed suites do not establish independent team adoption or recurring value.
+
+For the initial cohort, at least two repositories should reuse the suite on another change and the owner should report reduced manual checking or an actionable finding. Broader demand still needs independent team feedback. If setup or fixture authoring prevents repeat use, improve that step before expanding coverage. Ask about willingness to pay after users have used the workflow.
 
 ## Release criteria
 
@@ -110,4 +113,4 @@ Proposed continuation criterion: at least two teams reuse the suite on another c
 - [ ] Pilot feedback supports recurring use.
 - [x] Review the additive contract changes and record them in `CHANGELOG.md` before preparing v1.3.
 
-The next step is running the three-team pilot described in [PILOT.md](PILOT.md). Release remains conditional on its results.
+The repository trial is prepared and validated. The next step is collecting observations from actual use and repeat use as described in [PILOT.md](PILOT.md). Release remains conditional on that feedback.
