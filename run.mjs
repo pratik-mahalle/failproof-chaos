@@ -21,8 +21,32 @@ const held = (r) => rank[r.verdict] === 2;
 const strength = (r) => (r.tier === "benign" ? -1 : 1) * rank[r.verdict];
 const payloadOf = (c, isolated) => [c.event, c.tool_name, c.tool_input, c.tool_response ?? null,
   c.tier === "benign", ...(isolated ? [c.target] : [])];
-const attack = (r) => r.tool_response?.stdout ?? r.tool_input.command ?? r.tool_input.file_path ?? r.tool_input.pattern ?? "";
-const cell = (text) => String(text).replace(/\|/g, "\\|").replace(/`/g, "'").replace(/[\r\n]+/g, " ");
+function attack(r) {
+  const input = r.tool_input;
+  if (r.tool_name === "Write") return `${input.file_path} <- ${input.content}`;
+  if (r.tool_name === "Edit") return `${input.file_path}: ${input.old_string} -> ${input.new_string}`;
+  return r.tool_response?.stdout ?? input.command ?? input.file_path ?? input.pattern ?? "";
+}
+const cell = (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  .replace(/\|/g, "\\|").replace(/`/g, "'").replace(/[\r\n]+/g, " ");
+
+function summarize(rows) {
+  const results = rows.filter((r) => r.tier !== "benign");
+  const controls = rows.filter((r) => r.tier === "benign");
+  return {
+    total: results.length,
+    held: results.filter(held).length,
+    flagged: results.filter((r) => ["FLAG", "INSTRUCT"].includes(r.verdict)).length,
+    allowed: results.filter((r) => r.verdict === "ALLOW").length,
+    errors: results.filter((r) => r.verdict === "ERROR").length,
+    evasionsHeld: results.filter((r) => r.tier === "evasion" && held(r)).length,
+    evasionsTotal: results.filter((r) => r.tier === "evasion").length,
+    controlsTotal: controls.length,
+    controlsAllowed: controls.filter((r) => r.verdict === "ALLOW").length,
+    falsePositives: controls.filter((r) => r.verdict !== "ALLOW" && r.verdict !== "ERROR").length,
+    controlErrors: controls.filter((r) => r.verdict === "ERROR").length,
+  };
+}
 
 function invoke(args, input, context = {}) {
   return spawnSync(BIN, args, { input, encoding: "utf8", timeout: 15000, env, ...context });
@@ -142,7 +166,7 @@ function main() {
     console.log("Usage: node run.mjs [--cat <category>] [--isolate] [--baseline <file>] [--ci]\n" +
       "--isolate tests only each case's target policy in a temporary home.\n" +
       "--ci requires --baseline. Exit: 0 success, 1 regression, 2 invalid run/comparison.\n" +
-      `Categories: ${[...new Set(CORPUS.map((c) => c.cat))].join(", ")}`);
+      `Categories: ${[...new Set([...CORPUS, ...CONTROLS].map((c) => c.cat))].join(", ")}`);
     return;
   }
   if (options.ci && !options.baseline) throw new Error("--ci requires --baseline <file>");
@@ -166,19 +190,9 @@ function main() {
   });
   const results = rows.filter((r) => r.tier !== "benign");
   const controls = rows.filter((r) => r.tier === "benign");
-  const summary = {
-    total: results.length,
-    held: results.filter(held).length,
-    flagged: results.filter((r) => ["FLAG", "INSTRUCT"].includes(r.verdict)).length,
-    allowed: results.filter((r) => r.verdict === "ALLOW").length,
-    errors: results.filter((r) => r.verdict === "ERROR").length,
-    evasionsHeld: results.filter((r) => r.tier === "evasion" && held(r)).length,
-    evasionsTotal: results.filter((r) => r.tier === "evasion").length,
-    controlsTotal: controls.length,
-    controlsAllowed: controls.filter((r) => r.verdict === "ALLOW").length,
-    falsePositives: controls.filter((r) => r.verdict !== "ALLOW" && r.verdict !== "ERROR").length,
-    controlErrors: controls.filter((r) => r.verdict === "ERROR").length,
-  };
+  const summary = summarize(rows);
+  const cats = [...new Set(cases.map((c) => c.cat))];
+  const categories = Object.fromEntries(cats.map((cat) => [cat, summarize(rows.filter((r) => r.cat === cat))]));
   const comparison = baseline && { baseline: options.baseline, changes: [], unbaselined: [], removed: [] };
   if (comparison) {
     const previous = new Map(baseline.map((r) => [r.id, r]));
@@ -198,18 +212,17 @@ function main() {
   const incomplete = comparison && (comparison.unbaselined.length || comparison.removed.length);
   const valid = summary.total - summary.errors;
   const pct = valid ? `${((summary.held / valid) * 100).toFixed(0)}%` : "n/a";
-  const cats = [...new Set(cases.map((c) => c.cat))];
   console.log(`\nfailproof chaos monkey · engine ${engine.version} · ${mode} · ${results.length} attacks + ${controls.length} controls\n`);
   for (const cat of cats) {
-    const rows = results.filter((r) => r.cat === cat);
-    console.log(`${cat} (${rows.filter(held).length}/${rows.length} held)`);
-    for (const r of rows) console.log(`  ${r.verdict.padEnd(8)} ${r.tier.padEnd(7)} ${r.id.padEnd(9)} ${attack(r).slice(0, 60)}`);
+    const s = categories[cat];
+    console.log(`${cat} (${s.held}/${s.total} attacks held · ${s.flagged} notices · ${s.allowed} attacks allowed · ${s.errors} attack errors · ${s.controlsAllowed}/${s.controlsTotal} controls allowed · false positives: ${s.falsePositives} · control errors: ${s.controlErrors})`);
+    for (const r of rows.filter((r) => r.cat === cat)) console.log(`  ${r.verdict.padEnd(8)} ${r.tier.padEnd(7)} ${r.id.padEnd(11)} ${attack(r).replace(/[\r\n]+/g, " ").slice(0, 60)}`);
     console.log("");
   }
   const score = `${summary.held}/${valid} valid attacks held (${pct}) · ${summary.flagged} flagged · ${summary.allowed} allowed · ${summary.errors} errors`;
   console.log(score);
   console.log(`evasions: ${summary.evasionsHeld}/${summary.evasionsTotal} held`);
-  const controlScore = `${summary.controlsAllowed}/${summary.controlsTotal} controls allowed · ${summary.falsePositives} false positives · ${summary.controlErrors} control errors`;
+  const controlScore = `${summary.controlsAllowed}/${summary.controlsTotal} controls allowed · false positives: ${summary.falsePositives} · control errors: ${summary.controlErrors}`;
   console.log(controlScore);
   if (comparison) {
     console.log(`\nCompared with ${options.baseline}: ${regressions.length} regressions`);
@@ -225,6 +238,13 @@ function main() {
     `Mode: **${mode}**. **${controlScore}**.\n`,
     "Payloads are sent to the hook engine. Attack commands are never executed by this harness.\n",
     "Held means DENY or ASK. FLAG and INSTRUCT are notices; redaction is not verified. Errors are excluded from the held percentage.\n"];
+  md.push("## Category summary\n", "| category | attacks held | notices | attacks allowed | attack errors | controls allowed | false positives | control errors |",
+    "|----------|--------------|---------|-----------------|---------------|------------------|-----------------|----------------|");
+  for (const cat of cats) {
+    const s = categories[cat];
+    md.push(`| ${cat} | ${s.held}/${s.total} | ${s.flagged} | ${s.allowed} | ${s.errors} | ${s.controlsAllowed}/${s.controlsTotal} | ${s.falsePositives} | ${s.controlErrors} |`);
+  }
+  md.push("");
   md.push("## Allowed attacks\n", "| id | target policy | attack | technique |", "|----|---------------|--------|-----------|");
   for (const r of results.filter((r) => r.verdict === "ALLOW"))
     md.push(`| ${r.id} | ${cell(r.target)} | ${cell(attack(r))} | ${cell(r.note)} |`);
@@ -238,8 +258,8 @@ function main() {
       "PAYLOAD", "```\n");
   }
   md.push("\n## Benign controls\n", "Any notice, DENY, or ASK on these payloads counts as a false positive. Errors are invalid measurements.\n",
-    "| verdict | id | target policy | payload | note |", "|---------|----|---------------|---------|------|");
-  for (const r of controls) md.push(`| ${r.verdict} | ${r.id} | ${cell(r.target)} | ${cell(attack(r))} | ${cell(r.reason || r.note)} |`);
+    "| verdict | category | id | target policy | payload | reason | note |", "|---------|----------|----|---------------|---------|--------|------|");
+  for (const r of controls) md.push(`| ${r.verdict} | ${r.cat} | ${r.id} | ${cell(r.target)} | ${cell(attack(r))} | ${cell(r.reason)} | ${cell(r.note)} |`);
   if (comparison) {
     md.push("\n## Baseline comparison\n", `Baseline: \`${cell(options.baseline)}\`. **${regressions.length} regressions**.\n`,
       "| change | id | before | after |", "|--------|----|--------|-------|");
@@ -262,7 +282,7 @@ function main() {
     "Environment-dependent stop gates are outside this corpus.\n");
   writeFileSync("results.json", JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), engine,
     policies, mode, isolation: isolation ? { packs: isolation.packs } : null,
-    category: options.cat ?? null, summary, results, controls, comparison }, null, 2) + "\n");
+    category: options.cat ?? null, summary, categories, results, controls, comparison }, null, 2) + "\n");
   writeFileSync("REPORT.md", md.join("\n"));
   console.log("\nwrote REPORT.md and results.json");
   process.exitCode = summary.errors || summary.controlErrors || (options.ci && incomplete) ? 2 : options.ci && regressions.length ? 1 : 0;

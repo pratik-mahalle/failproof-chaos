@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.1.0 — category scores and file-write coverage
+
+- Add eight `file-write` probes for protected filenames, Edit/shell variants, and uppercase/backup extensions. Add two environment-dump probes around the procfs gap.
+- Add 20 benign controls for quoted commands, ordinary paths and cleanup, documentation placeholders, read-only SQL, and public file writes. The corpus now contains 55 attacks and 42 controls across ten categories.
+- Add category counts to console and Markdown reports and the additive JSON `categories` object. Existing schema-1 fields and CI exit codes keep their meanings.
+- Show Write contents and Edit replacements in reports. Escape HTML characters so placeholders such as `<TOKEN>` remain visible in Markdown.
+- Document focused reproductions and review updated all/default/isolated snapshots. All 67 v1.0 payloads retain their decisions; 30 new IDs require baseline review.
+
+Both supported engines match on the pinned pack. All policies: **35/55 held, 8 notices, 12 allowed; 35/42 controls allowed, 7 false positives**. Defaults: **16/55 held; 41/42 controls allowed, 1 false positive**. Isolation: **33/55 held; 35/42 controls allowed, 7 false positives**. All profiles have zero engine errors.
+
+The six additional all-policy false positives are newly measured cases. The file-write guard denies the four protected filenames through Write, allows the four alternate-tool/extension probes, and denies a benign documentation filename containing `credentials`. These are recorded policy findings; the runner never performs the payload's file writes.
+
 ## v1.0.0 — stable CI regression runner
 
 - Add 22 benign controls across all nine categories. New unwanted notices or blocks fail the CI gate; control errors stay separate from false positives.
