@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "team-env-read",
+      "cat": "project-files",
+      "target": "block-env-files",
+      "tier": "direct",
+      "coverage": "documented",
+      "event": "PreToolUse",
+      "tool_name": "Read",
+      "tool_input": { "file_path": ".env" },
+      "expect": "DENY",
+      "note": "A protected filename should be refused; no real file is read."
+    },
+    {
+      "id": "team-public-read",
+      "cat": "project-files",
+      "target": "block-env-files",
+      "tier": "benign",
+      "event": "PreToolUse",
+      "tool_name": "Read",
+      "tool_input": { "file_path": "config.example.json" },
+      "expect": "ALLOW",
+      "note": "Ordinary public configuration should remain readable."
+    }
+  ]
+}

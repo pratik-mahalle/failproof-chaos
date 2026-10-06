@@ -22,9 +22,11 @@
 
 ## What this does
 
-**v1.2 regression runner.** See [release notes](CHANGELOG.md).
+**v2.0.0: custom workflow regression suites.** See [release notes](CHANGELOG.md).
 
-Sends 55 attack payloads and 44 benign controls across ten categories to failproofai's hook engine. Commands and file writes stay JSON data; the harness never carries them out. It measures blocking decisions, advisory notices, allows, and engine errors, then compares them with a reviewed baseline. No LLM or API keys are needed.
+Test your team's tool calls with `--corpus` and exact expected decisions. A saved baseline cannot silence an unsafe allowance or unwanted block that fails an expectation. Run the suite in CI when policies or workflows change.
+
+The built-in corpus sends 55 attack payloads and 44 benign controls across ten categories to failproofai's hook engine. Commands and file writes stay JSON data; the harness never carries them out. It measures blocking decisions, advisory notices, allows, and engine errors, then compares them with a reviewed baseline. No LLM or API keys are needed.
 
 ### Reviewed configurations
 
@@ -69,6 +71,26 @@ Combined mode uses the installed configuration, including project settings. Isol
 
 The hook payload format is Claude-compatible, and the runner explicitly selects the `claude` CLI adapter. Other agent adapters and Windows are outside the verified compatibility set.
 
+## Test your team's workflows
+
+Turn a reported unsafe allowance or unwanted block into a reviewed JSON case. `--corpus` replaces the built-in cases with your suite and checks each expected decision:
+
+```bash
+node run.mjs --corpus examples/team-cases.json       # inspect expectations
+node run.mjs --corpus examples/team-cases.json --ci  # fail on a mismatch
+node run.mjs --corpus examples/team-cases.json --baseline team-baseline.json --ci
+```
+
+The [example](examples/team-cases.json) pairs a protected `.env` read with an allowed public configuration read. Each case needs `id`, `cat`, `target`, `tier`, `event`, `tool_name`, `tool_input`, and `expect`. `tier` is `direct`, `evasion`, or `benign`; `event` is `PreToolUse` or `PostToolUse`; `tool_input` is a JSON object. Optional `tool_response` preserves any JSON value. Optional `note` is a string. Attack `coverage` defaults to `exploratory`; set `documented` after reviewing the tested policy's declared scope. Benign coverage is `benign`.
+
+Use `{ "schemaVersion": 1, "cases": [...] }` with at least one case. IDs must be unique, required strings must be nonempty, and unknown fields are rejected. Custom categories come from the suite; attack-only and benign-only suites are supported. The entire suite is validated before category filtering and engine invocation. Corpus aliases to report outputs are rejected to protect your input.
+
+`expect` must be exactly `ALLOW`, `DENY`, `ASK`, `FLAG`, or `INSTRUCT`. Benign cases require `ALLOW`. A required `DENY` fails when the engine returns `ASK`, even though both count as held in the aggregate score. A saved baseline cannot override a failed expectation. Engine errors are invalid measurements and always exit 2. Inspection runs display mismatches; `--ci` gates on them. Custom suites can gate without a baseline because every case has an expectation.
+
+Run from the team's project directory to use its installed policy configuration and cwd. Paths in the suite are payload data; the runner never reads the named files or executes their commands. Isolated mode uses a temporary cwd and requires installed pack targets. Test standalone custom policy files in combined mode. Each case is a separate hook measurement; this workflow does not replay session state.
+
+Fixtures and generated reports contain the supplied payloads. Use synthetic or reviewed redacted examples, preserving the features needed to reproduce the decision. See [the pilot guide](PILOT.md) for incident authoring, a project-root CI recipe, and results from the initial three-repository trial. Its [unwanted-block rehearsal](examples/pilot-rehearsal.json) intentionally fails with the pinned all-policy pack.
+
 ## Verdicts
 
 | Verdict | Meaning |
@@ -84,7 +106,7 @@ Only DENY and ASK count as **held**. FLAG and INSTRUCT are notices that an agent
 
 ## Coverage labels
 
-Each row has a `coverage` annotation based on the [pinned pack's definitions](https://github.com/FailproofAI/policies/tree/06b802b63f4f399a4ef81bed7e932f94fd85af13):
+Each built-in row has a `coverage` annotation based on the [pinned pack's published definitions](https://github.com/FailproofAI/policies/releases/tag/06b802b63f4f). Custom suite labels are authored and reviewed against the policy being tested:
 
 | Label | Meaning |
 |-------|---------|
@@ -112,23 +134,25 @@ Attack protection ranks are **DENY/ASK > FLAG/INSTRUCT > ALLOW**. Benign control
 
 | Exit | Meaning |
 |------|---------|
-| 0 | Valid run; with `--ci`, no regressions |
-| 1 | `--ci` found weaker attack protection or stronger interference with benign work |
+| 0 | Valid run; with `--ci`, no regressions or expectation mismatches |
+| 1 | `--ci` found weaker attack protection, stronger interference with benign work, or an expectation mismatch |
 | 2 | Invalid arguments/baseline, engine error, or incomplete CI comparison |
 
-Matching IDs must have unchanged event, tool input/output, and attack/control classification. Isolated comparisons also require the same target policy. New, changed, or removed cases require review before CI passes. Modes must match; `--cat` scopes both sides to the same category. Engine versions and policy configuration may differ so upgrades can be compared deliberately.
+Matching IDs must have unchanged event, tool input/output, attack/control classification, and expected verdict when present. Isolated comparisons also require the same target policy. New, changed, or removed cases require review before CI passes. Modes must match; `--cat` scopes both sides to the same category. Engine versions and policy configuration may differ so upgrades can be compared deliberately. Invalid measurements and incomplete CI comparisons take precedence over mismatches and exit 2.
 
 Legacy array baselines and schema-1 baselines without controls or coverage labels remain readable. Legacy SANITIZE becomes FLAG; saved `held` booleans are ignored. v1.2 adds `ok-write-05` and `ok-write-06`, both reviewed as ALLOW, without changing existing payloads or expectations. A v1.1 baseline reports those two IDs as unbaselined and needs review before the full v1.2 CI gate passes. v1.0 baselines also need review of the 30 cases added in v1.1; preview baselines additionally need review of the corrected deletion payloads introduced in v1.0.
 
 Outputs are written to the current directory. Store baselines separately from `results.json` and `REPORT.md`; aliases to either output are rejected. Review failures before replacing a baseline.
 
-The [GitHub Actions workflow](.github/workflows/ci.yml) tests both engine versions on Node 22/24 and Ubuntu/macOS. Each job runs `node test.mjs`, installs fresh all/default policy configurations, and compares all three profiles with their reviewed snapshots. `node test.mjs` uses a fake engine and temporary files to check scoring, benign regressions, isolation, baseline safety, CLI exits, and error handling without network access.
+The [GitHub Actions workflow](.github/workflows/ci.yml) tests both engine versions on Node 22/24 and Ubuntu/macOS. Each job runs `node test.mjs`, installs fresh all/default policy configurations, compares all three profiles with their reviewed snapshots, and checks the custom example in each profile. `node test.mjs` uses a fake engine and temporary files to check scoring, exact expectations, suite validation, payload safety, isolation, baseline safety, CLI exits, and error handling without network access.
 
-Each job uploads a uniquely named `reports-<os>-node-<version>-engine-<version>` artifact. Its `all/`, `defaults/`, and `isolated/` directories each contain `results.json` and `REPORT.md` for completed measurements. Default and isolated checks continue after a failed comparison; uploading runs even after failures. A profile that fails before generating reports has no files, so an older profile or checked-in baseline cannot masquerade as a fresh measurement. Download the artifacts from the workflow run's summary page.
+Each job uploads a uniquely named `reports-<os>-node-<version>-engine-<version>` artifact. Its `all/`, `defaults/`, `isolated/`, `custom-all/`, `custom-defaults/`, and `custom-isolated/` directories each contain `results.json` and `REPORT.md` for completed measurements. Remaining profiles continue after a failed comparison; uploading runs even after failures. A profile that fails before generating reports has no files, so an older profile or checked-in baseline cannot masquerade as a fresh measurement. Download the artifacts from the workflow run's summary page.
 
-## Stable v1 contract
+## Stable v2 contract
 
-The supported flags are `--cat <category>`, `--isolate`, `--baseline <file>`, `--ci`, and `--help`/`-h`. Categories are `deletion`, `sudo`, `curl-pipe`, `infra`, `secrets`, `env`, `read-escape`, `git`, `data`, and `file-write`. Exit codes and JSON field meanings stay compatible throughout v1. Console text and Markdown layout are intended for humans.
+v2.0.0 marks the custom workflow testing milestone and preserves the v1.2 CLI behavior, exit codes, schema-1 field meanings, legacy baseline support, and all 99 built-in cases. Existing v1.2 built-in suites and baselines require no migration. The new custom suite fields are additive.
+
+The supported flags are `--corpus <file.json>`, `--cat <category>`, `--isolate`, `--baseline <file>`, `--ci`, and `--help`/`-h`. Built-in categories are `deletion`, `sudo`, `curl-pipe`, `infra`, `secrets`, `env`, `read-escape`, `git`, `data`, and `file-write`. Custom categories come from the suite. Exit codes and JSON field meanings stay compatible throughout v2. Built-in runs require `--baseline` with `--ci`; custom runs can gate on expectations alone. Console text and Markdown layout are intended for humans.
 
 `results.json` has `schemaVersion: 1` and these fields:
 
@@ -145,10 +169,11 @@ The supported flags are `--cat <category>`, `--isolate`, `--baseline <file>`, `-
 | `results` | Attack rows only |
 | `controls` | Benign rows only |
 | `comparison` | Null without a baseline; otherwise baseline path, changes, unbaselined IDs, and removed IDs |
+| `expectations` | Null for built-in runs; otherwise total, passed, failed, and mismatches with id, expected, and actual verdict |
 
-Rows contain `id`, `cat`, `target`, `tier`, `coverage`, `event`, `tool_name`, `tool_input`, optional `tool_response`, `note`, `verdict`, `reason`, and `held`. Tiers are `direct`/`evasion` for attacks and `benign` for controls. The additive `coverage` field is `documented`/`exploratory` for attacks and `benign` for controls; legacy baselines may omit it. A change contains `id`, `before`, `after`, and `kind` (`REGRESSION`, `IMPROVEMENT`, or `CHANGE`). Counts are nonnegative integers; attack and control errors are separate.
+Rows contain `id`, `cat`, `target`, `tier`, `coverage`, `event`, `tool_name`, `tool_input`, optional `tool_response`, `note`, `verdict`, `reason`, and `held`. Custom rows also contain `expect`. Tiers are `direct`/`evasion` for attacks and `benign` for controls. The additive `coverage` field is `documented`/`exploratory` for attacks and `benign` for controls; legacy baselines may omit it. A change contains `id`, `before`, `after`, and `kind` (`REGRESSION`, `IMPROVEMENT`, or `CHANGE`). Counts are nonnegative integers; attack and control errors are separate. Custom expectation totals include engine-error rows as mismatches, with actual verdict `ERROR`; those errors still invalidate the run.
 
-Consumers should ignore additional fields. Removing fields or changing their types or meanings requires a new schema version and a major release. Corpus additions and corrected expectations can require baseline review within v1; the gate reports those changes explicitly.
+Consumers should ignore additional fields. Removing fields or changing their types or meanings requires a new schema version and a major release. Corpus additions and corrected expectations can require baseline review within v2; the gate reports those changes explicitly.
 
 ## Focused reproductions
 
