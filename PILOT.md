@@ -78,6 +78,8 @@ The project marker `.failproofai` anchors path policies at this cwd. Combined ru
 
 The job clears generated reports in its checkout before testing so a failure before report generation cannot upload an old result. Store the suite and baseline under separate filenames to protect them from output writes.
 
+For a policy upgrade, capture the old pack's results using the same case set and expectations, then pass that snapshot to `--baseline` when running the new pack. The report shows changed decisions directly. If new cases intentionally fail on the old pack, keep those failures visible; the old snapshot is comparison evidence, and the new run must still satisfy every exact expectation.
+
 ## Record the pilot results
 
 For each team, record:
@@ -185,8 +187,25 @@ A separate local Node-22 check ran all 99 built-in cases under engine 1.0.10 wit
 
 This is agent-assisted internal reuse on one real published dependency update across three owned repositories. It shows that the suites preserve existing decisions, expose the new guard's decision strength, and check harmless cleanup beside risky cleanup. Each repository's maintenance change touched three files, adding 58 lines and removing six. Human review minutes, manual checks saved, production incidents, and independent team demand remain unmeasured.
 
+### Developer usefulness and review time
+
+The owner delegated this assessment on 2026-10-06. The agent's assessment is that the suites are useful for repeated policy-change review: they automate hook inputs, verdict classification, exact expectation checks, unwanted-block and error counts, and comparisons with previous results. The three maintained suites perform 54 verdict checks per update across two modes. These are automated checks, not 54 observed replacements for human checks. Initial fixture authoring and setup may outweigh the benefit for a one-off nine-case review.
+
+Two separate agents without the preceding conversation reviewed the same upgrade with identical questions. One read the nine JSON result files; the other read the nine Markdown reports. Each covered the old expanded suite, the new combined suite, and the new isolated suite in all three repositories. Both correctly identified the pass counts, the three `ALLOW` → `INSTRUCT` changes, the 21 unchanged non-cleanup cases, allowed previews, zero unwanted blocks and errors, and the distinction between advice and enforced blocking. Their answers matched a separate extraction from the results.
+
+| Review format | Agent elapsed time | Reading commands | Custom extraction script |
+|---|---|---|---|
+| JSON results | 84s | 2 | 19 lines |
+| Markdown reports | 49s | 2 | None |
+
+The Markdown review took 35 seconds less, about 42%, in this single pair. Both formats already contain the product's automated results. This measures agent reading time between formats, not human savings or the benefit of the whole product over manual testing. Timing includes reading and reasoning, uses one-second UTC precision, and excludes fixture authoring, installation, running checks, artifact downloads, and final response delivery. Both reviewers needed a targeted second read after their first output was truncated; there were no repetitions. The JSON review ran from 16:20:22 to 16:21:46 UTC; the Markdown review ran from 16:20:29 to 16:21:18 UTC on 2026-10-06.
+
+The assessment found avoidable review work: the expanded upgrade reports had no baseline comparison, requiring readers to match old and new files by case ID. Rerunning the new combined suites with the existing `--baseline` option against their old expanded results produced one direct `ALLOW` → `INSTRUCT` row per repository. All 27 expectations passed, with no regressions or new, changed, or removed fixtures. The local runs took 1.324s, 1.205s, and 1.205s respectively. Expectations and policy settings stayed the same; no new runner code was needed. The report labels the stronger notice an improvement, but it still does not hold execution. This comparison-report improvement was not included in the timed review above.
+
+The useful decision is whether the reviewed behavior meets a project's intended policy, including whether forced cleanup should merely receive advice. Developers still need to select representative fixtures, choose expected behavior, investigate failures, and assess live agent enforcement. Actual human review time, manual checks replaced, and independent user demand remain unmeasured.
+
 ### What remains to measure
 
 This is one owner's three-repository trial using documented workflows and synthetic probes. Setup and internal reuse during a published policy update are validated. Production incident capture, human review effort, manual checks saved, independent team adoption, and willingness to pay have not been measured.
 
-For the next actual change, record its PR or commit link, any affected case and policy, the observed finding and fix, minutes spent maintaining the suite, and the manual checks or minutes saved. Count repeat use when the suite is used on a subsequent policy or workflow change. The continuation criterion still requires recurring use and useful feedback; a passing seed suite alone does not establish product demand.
+For the next actual change, record its PR or commit link, any affected case and policy, the observed finding and fix, minutes spent maintaining the suite, and the manual checks or minutes saved. Record human review and fixture maintenance time as the work happens; distinguish measured time from retrospective estimates and agent or CI duration. Count repeat use when the suite is used on a subsequent policy or workflow change. The agent assessment establishes a practical use and a small comparison of report formats; the continuation criterion still requires recurring use and useful user feedback to establish product demand.

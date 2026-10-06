@@ -101,6 +101,7 @@ Validation completed on [the eight-job branch run](https://github.com/pratik-mah
 - [x] Verify that deliberately disabling a guard in each temporary configuration fails its suite. Rehearse the existing unwanted block and confirm that a saved failing baseline cannot hide it.
 - [x] Record initial value: first runs on main, measured CI times, controlled regressions caught, the known unwanted block, and the shared setup defect fixed.
 - [x] Reuse the suites during a real published engine and policy update in all three repositories, preserving existing decisions and reviewing new cleanup expectations.
+- [x] Assess developer usefulness, compare agent review time for JSON and Markdown outputs, and remove manual result matching by generating reports with the existing baseline option. Record the distinction from human time savings.
 - [ ] Capture a real incident from live hook use.
 - [ ] Measure human authoring and review effort, manual checks saved, and independent user feedback.
 
