@@ -204,7 +204,7 @@ The assessment found avoidable review work: the expanded upgrade reports had no 
 
 The useful decision is whether the reviewed behavior meets a project's intended policy, including whether forced cleanup should merely receive advice. Developers still need to select representative fixtures, choose expected behavior, investigate failures, and assess live agent enforcement. Actual human review time, manual checks replaced, and independent user demand remain unmeasured.
 
-### What remains to measure
+### Post-release measurements
 
 This is one owner's three-repository trial using documented workflows and synthetic probes. Setup and internal reuse during a published policy update are validated. Production incident capture, human review effort, manual checks saved, independent team adoption, and willingness to pay have not been measured.
 

@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased — custom workflow suites
+## v2.0.0 — custom workflow regression suites — 2026-10-06
+
+The major release marks support for repository-specific policy tests. Existing v1.2 commands, exit codes, schema-1 field meanings, legacy baselines, and all 99 built-in cases remain compatible. Existing built-in users require no migration.
 
 - Add `--corpus <file.json>` for reviewed tool-call fixtures with exact expected verdicts. Custom suites replace the built-in corpus and support their own categories, including suites containing only attacks or benign controls.
 - Gate custom suites with `--ci` using expectations alone or alongside a reviewed baseline. Known failures still fail expectations when saved in a baseline. Changed expectations require baseline review. Built-in CI retains its baseline requirement.
@@ -8,7 +10,9 @@
 - Validate suites before engine calls and report writes, protect corpus output aliases, and escape custom metadata in reports. Payload commands and writes remain data.
 - Check the synthetic team suite in all/default/isolated profiles throughout the existing eight-job matrix. Preserve custom reports alongside built-in reports and add an incident authoring and pilot guide.
 
-All eight jobs pass on engines 1.0.3/1.0.9 and Node 22/24 across Ubuntu/macOS. The 99 built-in cases retain their reviewed decisions and category scores in every profile; both custom expectations pass in all profiles, with zero engine errors. An initial trial in three owned repositories passes all 21 expectations on both engines and catches three controlled policy regressions. Add a rehearsal for the reviewed unwanted block and correct the starter CI recipe's job-level environment. Feedback from actual use and repeat use remains pending before release; see [PILOT.md](PILOT.md).
+All eight jobs pass on engines 1.0.3/1.0.9 and Node 22/24 across Ubuntu/macOS. The 99 built-in cases retain their reviewed decisions and category scores in every profile; both custom example expectations pass in all profiles, with zero engine errors. The three owned repositories passed 21 initial expectations on local engine 1.0.3 and CI engine 1.0.9, and caught three controlled policy regressions.
+
+The same repositories reused their suites during a published upgrade to engine 1.0.10 and policy pack 2.0.0. All 27 expectations pass in combined and isolated modes. Baseline reports show the three cleanup decisions changing from ALLOW to advisory INSTRUCT; all 21 original pilot decisions remain unchanged. Human time savings and independent user feedback are post-release validation work; see [PILOT.md](PILOT.md).
 
 ## v1.2.0 — coverage labels and CI report artifacts
 

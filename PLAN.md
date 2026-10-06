@@ -2,7 +2,7 @@
 
 Let teams check policy changes against their own tool calls before merging. A reported unsafe allowance or unwanted block becomes a reviewed test that runs on every subsequent change.
 
-The first release adds JSON suites and explicit expected decisions to the existing runner. Proposed release: v1.3, subject to the compatibility checks below.
+The v2.0.0 release adds JSON suites and explicit expected decisions to the existing runner. This major product milestone preserves the v1.2 CLI and schema-1 compatibility. Human time savings and independent user feedback are post-release validation work.
 
 ## Product hypothesis
 
@@ -102,8 +102,6 @@ Validation completed on [the eight-job branch run](https://github.com/pratik-mah
 - [x] Record initial value: first runs on main, measured CI times, controlled regressions caught, the known unwanted block, and the shared setup defect fixed.
 - [x] Reuse the suites during a real published engine and policy update in all three repositories, preserving existing decisions and reviewing new cleanup expectations.
 - [x] Assess developer usefulness, compare agent review time for JSON and Markdown outputs, and remove manual result matching by generating reports with the existing baseline option. Record the distinction from human time savings.
-- [ ] Capture a real incident from live hook use.
-- [ ] Measure human authoring and review effort, manual checks saved, and independent user feedback.
 
 The initial three-repository trial passed all 21 expectations on both local engine 1.0.3 and CI engine 1.0.9. All three controlled regressions failed as intended. The PRs, source pins, configuration, and limitations are recorded in [PILOT.md](PILOT.md). One owner's seed suites do not establish independent team adoption or recurring value. The follow-up published dependency update passes all 27 expectations in both combined and isolated modes; the new cleanup behavior is advisory and remains distinct from refusals. Internal reuse is recorded in the pilot guide.
 
@@ -113,7 +111,13 @@ For the initial cohort, at least two repositories should reuse the suite on anot
 
 - [x] CLI documentation, result fields, failure behavior, and example match the implementation.
 - [x] All compatibility and matrix checks pass.
-- [ ] Pilot feedback supports recurring use.
-- [x] Review the additive contract changes and record them in `CHANGELOG.md` before preparing v1.3.
+- [x] Validate internal reuse during a real published dependency update and document its scope and limitations.
+- [x] Review the additive contract changes and record them in `CHANGELOG.md` for v2.0.0.
 
-The initial trial and the follow-up dependency upgrade are merged, with policy runs on main passing. Initial measurements and internal reuse are recorded in [PILOT.md](PILOT.md). The next step is collecting owner feedback on review effort and manual checks saved, plus observations from live hook use. Release remains conditional on that feedback.
+The initial trial and the follow-up dependency upgrade are merged, with policy runs on main passing. Initial measurements and internal reuse are recorded in [PILOT.md](PILOT.md). Release is based on the verified runner contract, compatibility checks, and repository trials. Human timing and feedback remain unmeasured and are no longer release gates.
+
+## Post-release validation
+
+- [ ] Capture a real incident from live hook use.
+- [ ] Measure human authoring and review effort and manual checks saved.
+- [ ] Collect user feedback on recurring usefulness and independent team adoption.

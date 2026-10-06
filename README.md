@@ -22,9 +22,11 @@
 
 ## What this does
 
-**v1.3 candidate with custom workflow suites.** See [release notes](CHANGELOG.md).
+**v2.0.0: custom workflow regression suites.** See [release notes](CHANGELOG.md).
 
-Sends 55 attack payloads and 44 benign controls across ten categories to failproofai's hook engine. Commands and file writes stay JSON data; the harness never carries them out. It measures blocking decisions, advisory notices, allows, and engine errors, then compares them with a reviewed baseline. No LLM or API keys are needed.
+Test your team's tool calls with `--corpus` and exact expected decisions. A saved baseline cannot silence an unsafe allowance or unwanted block that fails an expectation. Run the suite in CI when policies or workflows change.
+
+The built-in corpus sends 55 attack payloads and 44 benign controls across ten categories to failproofai's hook engine. Commands and file writes stay JSON data; the harness never carries them out. It measures blocking decisions, advisory notices, allows, and engine errors, then compares them with a reviewed baseline. No LLM or API keys are needed.
 
 ### Reviewed configurations
 
@@ -104,7 +106,7 @@ Only DENY and ASK count as **held**. FLAG and INSTRUCT are notices that an agent
 
 ## Coverage labels
 
-Each built-in row has a `coverage` annotation based on the [pinned pack's definitions](https://github.com/FailproofAI/policies/tree/06b802b63f4f399a4ef81bed7e932f94fd85af13). Custom suite labels are authored and reviewed against the policy being tested:
+Each built-in row has a `coverage` annotation based on the [pinned pack's published definitions](https://github.com/FailproofAI/policies/releases/tag/06b802b63f4f). Custom suite labels are authored and reviewed against the policy being tested:
 
 | Label | Meaning |
 |-------|---------|
@@ -146,9 +148,11 @@ The [GitHub Actions workflow](.github/workflows/ci.yml) tests both engine versio
 
 Each job uploads a uniquely named `reports-<os>-node-<version>-engine-<version>` artifact. Its `all/`, `defaults/`, `isolated/`, `custom-all/`, `custom-defaults/`, and `custom-isolated/` directories each contain `results.json` and `REPORT.md` for completed measurements. Remaining profiles continue after a failed comparison; uploading runs even after failures. A profile that fails before generating reports has no files, so an older profile or checked-in baseline cannot masquerade as a fresh measurement. Download the artifacts from the workflow run's summary page.
 
-## Stable v1 contract
+## Stable v2 contract
 
-The supported flags are `--corpus <file.json>`, `--cat <category>`, `--isolate`, `--baseline <file>`, `--ci`, and `--help`/`-h`. Built-in categories are `deletion`, `sudo`, `curl-pipe`, `infra`, `secrets`, `env`, `read-escape`, `git`, `data`, and `file-write`. Custom categories come from the suite. Exit codes and JSON field meanings stay compatible throughout v1. Built-in runs require `--baseline` with `--ci`; custom runs can gate on expectations alone. Console text and Markdown layout are intended for humans.
+v2.0.0 marks the custom workflow testing milestone and preserves the v1.2 CLI behavior, exit codes, schema-1 field meanings, legacy baseline support, and all 99 built-in cases. Existing v1.2 built-in suites and baselines require no migration. The new custom suite fields are additive.
+
+The supported flags are `--corpus <file.json>`, `--cat <category>`, `--isolate`, `--baseline <file>`, `--ci`, and `--help`/`-h`. Built-in categories are `deletion`, `sudo`, `curl-pipe`, `infra`, `secrets`, `env`, `read-escape`, `git`, `data`, and `file-write`. Custom categories come from the suite. Exit codes and JSON field meanings stay compatible throughout v2. Built-in runs require `--baseline` with `--ci`; custom runs can gate on expectations alone. Console text and Markdown layout are intended for humans.
 
 `results.json` has `schemaVersion: 1` and these fields:
 
@@ -169,7 +173,7 @@ The supported flags are `--corpus <file.json>`, `--cat <category>`, `--isolate`,
 
 Rows contain `id`, `cat`, `target`, `tier`, `coverage`, `event`, `tool_name`, `tool_input`, optional `tool_response`, `note`, `verdict`, `reason`, and `held`. Custom rows also contain `expect`. Tiers are `direct`/`evasion` for attacks and `benign` for controls. The additive `coverage` field is `documented`/`exploratory` for attacks and `benign` for controls; legacy baselines may omit it. A change contains `id`, `before`, `after`, and `kind` (`REGRESSION`, `IMPROVEMENT`, or `CHANGE`). Counts are nonnegative integers; attack and control errors are separate. Custom expectation totals include engine-error rows as mismatches, with actual verdict `ERROR`; those errors still invalidate the run.
 
-Consumers should ignore additional fields. Removing fields or changing their types or meanings requires a new schema version and a major release. Corpus additions and corrected expectations can require baseline review within v1; the gate reports those changes explicitly.
+Consumers should ignore additional fields. Removing fields or changing their types or meanings requires a new schema version and a major release. Corpus additions and corrected expectations can require baseline review within v2; the gate reports those changes explicitly.
 
 ## Focused reproductions
 
