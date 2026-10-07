@@ -2,7 +2,7 @@
 
 Turn an unsafe allowance or unwanted block into a reviewed repository test, then show whether a policy change fixes it while preserving ordinary work. Build on the custom suites, exact expectations, baseline comparisons, and reports shipped in v2.0.0.
 
-Updated 7 October 2026. Stages 1 and 2 are implemented on the feature branch; release validation is in progress. Later stages remain planned. The completed v2.0.0 plan is retained below as release history. Human timing and independent user feedback remain post-release validation work.
+Updated 7 October 2026. Stages 1 and 2 are implemented and validated in [draft PR 2](https://github.com/pratik-mahalle/failproof-chaos/pull/2). They remain unreleased. Later stages remain planned. The completed v2.0.0 plan is retained below as release history. Human timing and independent user feedback remain post-release validation work.
 
 ## Delivery order
 
@@ -65,11 +65,13 @@ The separate `case.mjs` entry point takes `--input`, `--id`, `--cat`, `--target`
 ## Release checks for stages 1 and 2
 
 - [x] Extend the existing `node test.mjs` checks for the new behavior and data-preservation failures. Keep existing verdict, input protection, and baseline checks passing.
-- [ ] Run the eight-job Ubuntu/macOS × Node 22/24 × engine 1.0.3/1.0.9 matrix. Retain built-in and custom all/default/isolated profiles. Generated example drafts must also pass through the runner.
-- [ ] Verify that all 99 built-in cases retain their reviewed decisions and category scores. Record changed expectations and their reasons before any baseline update; these stages should not require one.
-- [ ] Inspect summaries from both passing and intentionally failing runs, including missing results. Confirm that each artifact is attributable to its profile and current invocation.
+- [x] Run the eight-job Ubuntu/macOS × Node 22/24 × engine 1.0.3/1.0.9 matrix. Retain built-in and custom all/default/isolated profiles. Generated example drafts must also pass through the runner.
+- [x] Verify that all 99 built-in cases retain their reviewed decisions and category scores. Record changed expectations and their reasons before any baseline update; these stages should not require one.
+- [x] Inspect summaries from both passing and intentionally failing runs, including missing results. Confirm that each artifact is attributable to its profile and current invocation.
 - [x] Document the CLI, summary fields, compatibility boundaries, and unreleased changes in `CHANGELOG.md`.
-- [ ] Record one complete authoring rehearsal and an upgrade review using the new output. Publish only the claims supported by those checks.
+- [x] Record one complete authoring rehearsal and an upgrade review using the new output. Publish only the claims supported by those checks.
+
+All eight jobs passed on implementation commit `3f18938` in [the compatibility run](https://github.com/pratik-mahalle/failproof-chaos/actions/runs/37636042218). Its 48 measurements preserve every reviewed built-in decision and pass all 48 generated-case expectations. Local real-engine guard-disabling rehearsals and a published-pack upgrade replay are recorded in [the pilot validation](PILOT.md#implementation-validation-on-7-october-2026). Summary source text and failure behavior were checked; rendered GitHub UI inspection was unavailable in this session.
 
 Technical checks and the documented workflow determine release readiness. A real production incident, independent adoption, and human time savings improve the value evidence after release; they do not hold this release open.
 

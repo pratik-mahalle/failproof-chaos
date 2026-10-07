@@ -36,9 +36,19 @@ node /path/to/failproof-chaos/case.mjs --input quoted-command.json \
 node /path/to/failproof-chaos/run.mjs --corpus quoted-draft.json --ci
 ```
 
-Under the pinned all-policy configuration, the quoted command is denied and this desired `ALLOW` fails. Saving the result as a baseline must not silence it. Use [pilot-rehearsal.json](examples/pilot-rehearsal.json) when evaluating a fix: it pairs the quoted example with other ordinary work and an actual deletion payload expected to receive `DENY`. Disabling the guard also permits the deletion probe, so that suite remains red. The upstream unwanted block remains open; this recipe does not claim it is fixed.
+Under the pinned all-policy configuration, the quoted command is denied and this desired `ALLOW` fails. Saving the result as a baseline must not silence it. Use [pilot-rehearsal.json](examples/pilot-rehearsal.json) when evaluating a fix: it pairs the quoted example with other ordinary work and an actual deletion payload expected to receive `DENY`. Disabling the guard also permits the deletion probe, so that suite remains red. The pinned pack's unwanted block remains reproducible; this recipe does not claim it is fixed.
 
 `node test.mjs` checks controlled responses for unsafe allowances, unwanted blocks, and fixes without live policy changes. These checks establish runner behavior; production incident capture and human time savings remain unmeasured.
+
+### Implementation validation on 7 October 2026
+
+The draft-case helper and summaries were validated on implementation commit `3f18938`. All eight jobs passed in [the branch compatibility run](https://github.com/pratik-mahalle/failproof-chaos/actions/runs/37636042218). Inspection of its eight artifact bundles confirmed 48 measurements and 96 report files: all 99 built-in decisions and category scores remained unchanged in each all/default/isolated profile, and all 48 expectations from the generated pairs passed. No baseline or expectation was updated.
+
+Local Node 22 runs on engines 1.0.3 and 1.0.9 covered the same six profiles per engine. In fresh temporary configurations containing copied policy artifacts, disabling `block-env-files` made the generated protected-read expectation fail while the public read stayed allowed. Each suite still failed against its saved failing baseline. Restoring the guard passed both expectations and showed `ALLOW → DENY`. These six rehearsal runs had zero engine errors and left the source configurations intact. Argument, validation, and summary error handling was tightened during the initial local profile checks; the GitHub matrix above verifies the final implementation commit.
+
+A separate replay of the earlier `agent-action-evals` policy-pack upgrade used engine 1.0.10, the previously recorded old-pack baseline, the same nine cases, and pack 2.0.0 in a fresh temporary home. All nine expectations passed, including six ordinary actions. The sole change remained forced cleanup `ALLOW → INSTRUCT`; dry-run cleanup remained `ALLOW`. The new summary displayed the change, one advisory notice, zero errors, and zero regressions. This checks the published pack comparison under the recorded engine and a temporary cwd; it does not verify live integration with the original repository.
+
+Summary source text was inspected for passes, exact mismatches, unwanted blocks, advisory changes, incomplete comparisons, and failures before measurement. Automated checks also verify that malformed JSON does not expose parser excerpts, stale reports cannot become fresh summaries, and summary paths cannot append to inputs or reports. Human time savings and independent usage remain post-release measurements.
 
 ## Run in project CI
 
