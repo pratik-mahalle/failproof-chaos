@@ -32,6 +32,18 @@ jobs:
           package-manager-cache: false
       - name: Check the runner
         run: node test.mjs
+      - name: Draft the custom suite from supplied payloads
+        run: |
+          drafts=$(mktemp -d "$RUNNER_TEMP/chaos-drafts.XXXXXX")
+          node case.mjs --input examples/hook-env-read.json --id team-env-read --cat project-files --target block-env-files --tier direct --expect DENY --coverage documented --out "$drafts/incident.json"
+          node case.mjs --input examples/hook-public-read.json --id team-public-read --cat project-files --target block-env-files --tier benign --expect ALLOW --out "$drafts/control.json"
+          node --input-type=module - "$drafts" <<'JS'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const dir = process.argv[2];
+          const cases = ['incident', 'control'].flatMap(name => JSON.parse(readFileSync(`${dir}/${name}.json`, 'utf8')).cases);
+          writeFileSync(`${dir}/team-cases.json`, JSON.stringify({ schemaVersion: 1, cases }), { flag: 'wx' });
+          JS
+          echo "FAILPROOF_CASES=$drafts/team-cases.json" >> "$GITHUB_ENV"
       - name: Install the pinned engine and policies
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -44,45 +56,61 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: failproofai policies add FailproofAI/policies@06b802b63f4f
       - name: Compare all policies with the reviewed snapshot
+        env:
+          FAILPROOF_PROFILE: built-in / all
         run: |
           cp results.json "$RUNNER_TEMP/failproof-baseline.json"
           mkdir -p reports/all/.failproofai
           cd reports/all
+          rm -f results.json REPORT.md
           node ../../run.mjs --baseline "$RUNNER_TEMP/failproof-baseline.json" --ci
       - name: Compare default policies with their reviewed snapshot
         if: ${{ !cancelled() }}
         env:
           FAILPROOFAI_HOME: ${{ runner.temp }}/failproof-defaults
+          FAILPROOF_PROFILE: built-in / defaults
         run: |
           mkdir -p reports/defaults/.failproofai
           cd reports/defaults
+          rm -f results.json REPORT.md
           node ../../run.mjs --baseline ../../baselines/defaults.json --ci
       - name: Compare isolated policies with their reviewed snapshot
         if: ${{ !cancelled() }}
+        env:
+          FAILPROOF_PROFILE: built-in / isolated
         run: |
           mkdir -p reports/isolated
           cd reports/isolated
+          rm -f results.json REPORT.md
           node ../../run.mjs --isolate --baseline ../../baselines/isolated.json --ci
       - name: Check the custom suite with all policies
         if: ${{ !cancelled() }}
+        env:
+          FAILPROOF_PROFILE: generated custom / all
         run: |
           mkdir -p reports/custom-all/.failproofai
           cd reports/custom-all
-          node ../../run.mjs --corpus ../../examples/team-cases.json --ci
+          rm -f results.json REPORT.md
+          node ../../run.mjs --corpus "$FAILPROOF_CASES" --ci
       - name: Check the custom suite with default policies
         if: ${{ !cancelled() }}
         env:
           FAILPROOFAI_HOME: ${{ runner.temp }}/failproof-defaults
+          FAILPROOF_PROFILE: generated custom / defaults
         run: |
           mkdir -p reports/custom-defaults/.failproofai
           cd reports/custom-defaults
-          node ../../run.mjs --corpus ../../examples/team-cases.json --ci
+          rm -f results.json REPORT.md
+          node ../../run.mjs --corpus "$FAILPROOF_CASES" --ci
       - name: Check the custom suite with isolated policies
         if: ${{ !cancelled() }}
+        env:
+          FAILPROOF_PROFILE: generated custom / isolated
         run: |
           mkdir -p reports/custom-isolated
           cd reports/custom-isolated
-          node ../../run.mjs --corpus ../../examples/team-cases.json --isolate --ci
+          rm -f results.json REPORT.md
+          node ../../run.mjs --corpus "$FAILPROOF_CASES" --isolate --ci
       - name: Upload profile reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -91,6 +91,38 @@ Run from the team's project directory to use its installed policy configuration 
 
 Fixtures and generated reports contain the supplied payloads. Use synthetic or reviewed redacted examples, preserving the features needed to reproduce the decision. See [the pilot guide](PILOT.md) for incident authoring, a project-root CI recipe, and results from the initial three-repository trial. Its [unwanted-block rehearsal](examples/pilot-rehearsal.json) intentionally fails with the pinned all-policy pack.
 
+### Draft a case from a hook payload
+
+`case.mjs` turns one explicitly supplied Claude-compatible payload into a new schema-1 suite containing one case. Choose the intended verdict yourself:
+
+```bash
+node case.mjs --input examples/hook-env-read.json \
+  --id team-env-read --cat project-files --target block-env-files \
+  --tier direct --expect DENY --coverage documented --out env-draft.json
+node case.mjs --input examples/hook-public-read.json \
+  --id team-public-read --cat project-files --target block-env-files \
+  --tier benign --expect ALLOW --out public-draft.json
+node case.mjs --help
+```
+
+The input requires `hook_event_name`, `tool_name`, and object-valued `tool_input`; `tool_response` is optional and preserves any JSON value, including `false` and `null`. Events are `PreToolUse` and `PostToolUse`. The required flags are `--input`, `--id`, `--cat`, `--target`, `--tier`, `--expect`, and `--out`; optional `--coverage` and `--note` use the same rules as custom cases.
+
+The helper refuses existing output paths and invalid fields before writing. It does not run the engine, choose an expectation from an observed decision, redact data, or invent an ordinary control. It reports omitted capture metadata (`cwd`, `session_id`, `transcript_path`, `permission_mode`, and `tool_use_id`) by field name. Replay uses the runner's cwd and does not restore session state. Other payload formats and unknown fields are rejected.
+
+Review both drafts, redact sensitive data while preserving the failure condition, and combine them into a new suite:
+
+```bash
+node --input-type=module <<'JS'
+import { readFileSync, writeFileSync } from 'node:fs';
+const cases = ['env-draft.json', 'public-draft.json']
+  .flatMap(path => JSON.parse(readFileSync(path, 'utf8')).cases);
+writeFileSync('team-cases.json', JSON.stringify({ schemaVersion: 1, cases }, null, 2) + '\n', { flag: 'wx' });
+JS
+node run.mjs --corpus team-cases.json --ci
+```
+
+Run from the intended project directory and check that any redacted case still reproduces the original decision. A desired verdict can remain red until its policy is fixed. These supplied examples are synthetic; [the pilot guide](PILOT.md#synthetic-authoring-rehearsals) covers unsafe allowances and unwanted blocks.
+
 ## Verdicts
 
 | Verdict | Meaning |
@@ -136,7 +168,7 @@ Attack protection ranks are **DENY/ASK > FLAG/INSTRUCT > ALLOW**. Benign control
 |------|---------|
 | 0 | Valid run; with `--ci`, no regressions or expectation mismatches |
 | 1 | `--ci` found weaker attack protection, stronger interference with benign work, or an expectation mismatch |
-| 2 | Invalid arguments/baseline, engine error, or incomplete CI comparison |
+| 2 | Invalid arguments/baseline, engine error, incomplete CI comparison, or failed summary output after an otherwise successful run |
 
 Matching IDs must have unchanged event, tool input/output, attack/control classification, and expected verdict when present. Isolated comparisons also require the same target policy. New, changed, or removed cases require review before CI passes. Modes must match; `--cat` scopes both sides to the same category. Engine versions and policy configuration may differ so upgrades can be compared deliberately. Invalid measurements and incomplete CI comparisons take precedence over mismatches and exit 2.
 
@@ -147,6 +179,14 @@ Outputs are written to the current directory. Store baselines separately from `r
 The [GitHub Actions workflow](.github/workflows/ci.yml) tests both engine versions on Node 22/24 and Ubuntu/macOS. Each job runs `node test.mjs`, installs fresh all/default policy configurations, compares all three profiles with their reviewed snapshots, and checks the custom example in each profile. `node test.mjs` uses a fake engine and temporary files to check scoring, exact expectations, suite validation, payload safety, isolation, baseline safety, CLI exits, and error handling without network access.
 
 Each job uploads a uniquely named `reports-<os>-node-<version>-engine-<version>` artifact. Its `all/`, `defaults/`, `isolated/`, `custom-all/`, `custom-defaults/`, and `custom-isolated/` directories each contain `results.json` and `REPORT.md` for completed measurements. Remaining profiles continue after a failed comparison; uploading runs even after failures. A profile that fails before generating reports has no files, so an older profile or checked-in baseline cannot masquerade as a fresh measurement. Download the artifacts from the workflow run's summary page.
+
+### GitHub workflow summaries
+
+When `GITHUB_STEP_SUMMARY` is set, the runner automatically appends a compact summary for the current invocation. Set `FAILPROOF_PROFILE` to a readable label, such as `custom-all`. The summary identifies the suite, mode, engine, operating system, and Node version; isolated mode is labeled as using policy defaults.
+
+Changed and failing cases show their IDs, expected and actual decisions where available, and reasons. Counts separate expectation failures, regressions, allowed attack probes, unwanted blocks, advisory notices, and engine errors. New, changed, or removed cases remain visible as comparison review requirements. `ALLOW` → `INSTRUCT` is advice, not a blocking decision.
+
+Summaries use the invocation's in-memory results, never a previous `results.json`. A failure before measurement reports missing results; engine errors and incomplete comparisons remain failures. A summary-write failure preserves an existing exit 1 or 2; an otherwise successful run exits 2. Text is escaped and bounded, and full payloads are omitted, but policy reasons can still contain input data. Review sensitive fixtures and report visibility accordingly. Full reports remain available through the workflow's artifacts link.
 
 ## Stable v2 contract
 

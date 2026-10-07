@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add native GitHub workflow summaries for the current invocation, including changed and failing case IDs, exact decisions, reasons, review requirements, and separate attack, ordinary-work, advisory, and error signals. Keep full reports as artifacts. Failed summary writes preserve an existing failure status and make an otherwise successful run exit 2.
+- Add `case.mjs` to create a new single-case schema-1 draft from an explicitly supplied Claude-compatible hook payload and author-selected metadata and expectation. Preserve optional response values, reject invalid inputs and existing destinations, and report omitted capture metadata.
+- Give custom-suite validation errors a case and field context. Document reviewed incident/control pairs, synthetic unsafe-allowance and unwanted-block rehearsals, and baseline-based upgrade reviews.
+
+These additions preserve the runner CLI, exit codes, schema-1 field meanings, and reviewed built-in cases. The helper does not capture sessions, execute payloads, infer expected behavior, or redact input. Human time savings and real production incident capture remain unmeasured.
+
 ## v2.0.0 — custom workflow regression suites — 2026-10-06
 
 The major release marks support for repository-specific policy tests. Existing v1.2 commands, exit codes, schema-1 field meanings, legacy baselines, and all 99 built-in cases remain compatible. Existing built-in users require no migration.
