@@ -9,6 +9,50 @@ permissions:
   contents: read
 
 jobs:
+  codex:
+    name: Codex contract (${{ matrix.os }}, Node ${{ matrix.node }}, engine 1.0.10)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            node: "22"
+          - os: macos-latest
+            node: "24"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      FAILPROOFAI_HOME: /tmp/failproof-codex
+      FAILPROOFAI_NO_FIRST_RUN: "1"
+      FAILPROOFAI_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+      - name: Install pinned Codex engine and policies
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          npm install --global failproofai@1.0.10
+          failproofai policies add FailproofAI/policies@06b802b63f4f --all
+      - name: Verify native responses, reviewed patch gaps, and configuration changes
+        run: node test-codex-engine.mjs "$RUNNER_TEMP/codex-reports"
+      - name: Upload Codex diagnostic reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: codex-${{ matrix.os }}-node${{ matrix.node }}-engine1.0.10
+          path: |
+            ${{ runner.temp }}/codex-reports/**/results.json
+            ${{ runner.temp }}/codex-reports/**/REPORT.md
+            ${{ runner.temp }}/codex-reports/**/runner.log
+            ${{ runner.temp }}/codex-reports/**/verification.json
+          if-no-files-found: error
+
   check:
     strategy:
       fail-fast: false

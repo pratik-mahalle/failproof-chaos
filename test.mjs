@@ -469,7 +469,7 @@ process.exit(0);
   assert.equal(checkSummary(customBaselineCI).status, 0);
   assert.match(summaryText(), /ALLOW → INSTRUCT/);
   assert.match(summaryText(), /0 held, 1 advisory notices/);
-  assert.match(summaryText(), /FLAG and INSTRUCT are advisory/);
+  assert.match(summaryText(), /FLAG and INSTRUCT do not prove prevention or redaction/);
 
   writeFileSync(corpusFile, JSON.stringify(suite));
   assert.equal(checkSummary().status, 0);
@@ -521,6 +521,21 @@ process.exit(0);
   assert.equal(run([...customCI, "--unknown"], "normal", engine, { GITHUB_STEP_SUMMARY: corpusFile }).status, 2);
   assert.equal(readFileSync(corpusFile, "utf8"), corpusBeforeSummary);
 
+  // Dangling summary/input aliases must not create a missing input as Markdown.
+  const beforeDangling = [resultsFile, join(work, "REPORT.md"), callsFile].map((file) => readFileSync(file, "utf8"));
+  for (const option of ["corpus", "baseline"]) {
+    const target = join(work, `missing-${option}.json`);
+    const link = join(work, `dangling-${option}.json`);
+    symlinkSync(target, link);
+    for (const [input, summary] of [[target, link], [link, target]]) {
+      const failed = run([`--${option}`, input, "--ci"], "normal", engine, { GITHUB_STEP_SUMMARY: summary });
+      assert.equal(failed.status, 2);
+      assert.match(failed.stderr, /Could not write GitHub summary/);
+      assert.equal(existsSync(target), false);
+      assert.deepEqual([resultsFile, join(work, "REPORT.md"), callsFile].map((file) => readFileSync(file, "utf8")), beforeDangling);
+    }
+  }
+
   const large = { schemaVersion: 1, cases: Array.from({ length: 60 }, (_, i) => ({ ...suite.cases[0],
     id: `${i}-` + "|<script>".repeat(100) })) };
   writeFileSync(corpusFile, JSON.stringify(large));
@@ -534,3 +549,6 @@ process.exit(0);
 }
 
 await import("./test-case.mjs");
+await import("./test-adapter.mjs");
+await import("./test-context.mjs");
+await import("./test-codex.mjs");

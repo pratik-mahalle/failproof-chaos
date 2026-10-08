@@ -2,7 +2,7 @@
 
 Turn an unsafe allowance or unwanted block into a reviewed repository test, then show whether a policy change fixes it while preserving ordinary work. Build on the custom suites, exact expectations, baseline comparisons, and reports shipped in v2.0.0.
 
-Updated 7 October 2026. Stages 1 and 2 are implemented and validated in [draft PR 2](https://github.com/pratik-mahalle/failproof-chaos/pull/2). They remain unreleased. Later stages remain planned. The completed v2.0.0 plan is retained below as release history. Human timing and independent user feedback remain post-release validation work.
+Updated 8 October 2026. Stages 1 and 2 are implemented and validated in [draft PR 2](https://github.com/pratik-mahalle/failproof-chaos/pull/2). Stage 3 is implemented and locally validated on `feat/codex-policy-coverage`; its pull request records CI status. These changes remain unreleased. Stage 4 remains planned. The completed v2.0.0 plan is retained below as release history. Human timing and independent user feedback remain post-release validation work.
 
 ## Delivery order
 
@@ -79,18 +79,30 @@ Technical checks and the documented workflow determine release readiness. A real
 
 Extend the verified compatibility set from Claude-compatible calls to one pinned Codex adapter contract. Treat payload construction, verdict decoding, and baseline identity as one change.
 
-- [ ] Verify the upstream engine versions that support the required Codex inputs and responses. Record representative native fixtures and their sources before implementation.
-- [ ] Add explicit adapter selection with Claude as the backward-compatible default. Use the selected adapter's actual payload and response semantics. Unknown or unsupported responses must be invalid measurements, never implicit successes.
-- [ ] Record adapter identity in results and comparison inputs. Treat legacy results as Claude; reject accidental comparisons across adapters. Design cross-adapter experiments as explicitly paired cases, not ordinary baseline comparisons.
-- [ ] Cover shell commands, direct writes, edits, and multi-file patches. Include safe-only patches and patches where a protected path appears after an ordinary path, plus relevant quoting and path variants. Retain native payload evidence through evaluation.
-- [ ] Confirm whether schema 1 can faithfully represent the supported native calls. If it cannot, define a versioned extension and migration before changing the schema; do not force a lossy translation.
-- [ ] Record engine version, adapter, pack identifiers and hashes, mode, tested cwd, enabled selections where available, and fingerprints of explicitly selected configuration files. Exclude credentials and environment dumps. Label unverified configuration context clearly: file hashes identify inputs but do not prove the engine applied them.
-- [ ] Provide a reproducible recipe for two temporary, explicit configurations using the same suite and existing baseline comparison. Keep project parameters distinct from isolated policy defaults; preserve existing `--isolate` semantics.
-- [ ] Validate at least one nondefault policy parameter that changes a relevant decision, alongside an ordinary control. Follow version-pinned configuration precedence rather than guessing a merged configuration.
+- [x] Verify the upstream engine versions that support the required Codex inputs and responses. Record representative native fixtures and their sources before implementation.
+- [x] Add explicit adapter selection with Claude as the backward-compatible default. Use the selected adapter's actual payload and response semantics. Unknown or unsupported responses must be invalid measurements, never implicit successes.
+- [x] Record adapter identity in results and comparison inputs. Treat legacy results as Claude; reject accidental comparisons across adapters. Design cross-adapter experiments as explicitly paired cases, not ordinary baseline comparisons.
+- [x] Cover shell commands, direct writes, edits, and multi-file patches. Include safe-only patches and patches where a protected path appears after an ordinary path, plus relevant quoting and path variants. Retain native payload evidence through evaluation.
+- [x] Confirm whether schema 1 can faithfully represent the supported native calls. If it cannot, define a versioned extension and migration before changing the schema; do not force a lossy translation.
+- [x] Record engine version, adapter, pack identifiers and hashes, mode, tested cwd, enabled selections where available, and fingerprints of explicitly selected configuration files. Exclude credentials and environment dumps. Label unverified configuration context clearly: file hashes identify inputs but do not prove the engine applied them.
+- [x] Provide a reproducible recipe for two temporary, explicit configurations using the same suite and existing baseline comparison. Keep project parameters distinct from isolated policy defaults; preserve existing `--isolate` semantics.
+- [x] Validate at least one nondefault policy parameter that changes a relevant decision, alongside an ordinary control. Follow version-pinned configuration precedence rather than guessing a merged configuration.
 
 **Acceptance:** native fixtures reach the intended adapter without losing semantics; output decoding handles its real responses and errors; incompatible adapter comparisons fail clearly; configuration differences are visible; and ordinary operations stay represented beside risky ones. Existing Claude checks continue to pass. Add focused Codex CI jobs only for supported engine versions, with OS and Node coverage documented; do not silently multiply the full matrix by unsupported combinations.
 
 The upstream report about Codex patches normalizing to `Edit` while a guard matched `Write` supplies a concrete test candidate. Reproduce it on explicitly pinned revisions before claiming a Chaos finding; an open PR's description alone is not independent validation. [Upstream PR 832](https://github.com/FailproofAI/failproofai/pull/832). Configuration parameters and scope rules are documented in [Failproof local configuration](https://docs.befailproof.ai/policies/local-configuration).
+
+### Stage 3 validation — 8 October 2026
+
+The [native fixtures](examples/codex-cases.json) preserve `Bash` and `apply_patch` command strings in schema 1. The [Codex hook contract](https://learn.chatgpt.com/docs/hooks) uses these native tool names; Failproof performs its own matcher normalization. The adapter rejects unsupported decisions and shapes. Post-tool blocking output is feedback (`FLAG`), not evidence that execution was prevented. Existing Claude decoding remains unchanged.
+
+Local real-engine checks on 1.0.3, 1.0.9, and 1.0.10 with pack `06b802b63f4f` reproduce six desired protected-patch refusals returning `ALLOW`, including a protected path after an ordinary path. The 15-case diagnostic suite has nine matching expectations and six visible failures, with all six ordinary controls allowed and zero errors. These exploratory expectations stay `DENY`; no baseline or expectation was changed to hide them. This independently reproduces the candidate from upstream PR 832.
+
+`test-codex-engine.mjs` also uses two explicit temporary homes and the same project cwd and suite to compare `block-read-outside-cwd.allowPaths`. The outside read changes `DENY` → `ALLOW`, creating one failed expectation and one regression; the ordinary repository read stays `ALLOW`. Configuration fingerprints match the supplied files, and source settings remain unchanged. This proves the tested parameter's effect; the general context record identifies sources only.
+
+All offline checks pass. The six local Claude measurements (engines 1.0.3/1.0.9 × all/default/isolated) match every reviewed verdict and category score. The existing eight CI jobs remain intact; two focused Codex jobs add engine 1.0.10 on Ubuntu/Node 22 and macOS/Node 24. Their diagnostic check asserts the reviewed failures explicitly and keeps the failing policy reports in artifacts. The stage 3 pull request records matrix completion and artifact review.
+
+Schema 1, default Claude behavior, and existing exit codes remain compatible. `adapter`, `runContext`, and `comparison.contextChanged` are additive. No schema migration or major-version requirement follows from this change. Release numbering and publication remain separate from implementation.
 
 ## Stage 4 Check suite sensitivity to weakened guards
 
