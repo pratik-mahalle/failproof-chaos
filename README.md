@@ -289,7 +289,7 @@ v2.0.0 marks the custom workflow testing milestone and preserves the v1.2 CLI be
 
 v3.0.0 compatibility: schema 1, CLI flags, and exit codes are unchanged. The built-in corpus is now 123 cases (76 attacks, 47 controls) across eleven categories including `tamper`, so saved built-in baselines report the 24 new cases for review. `faults.mjs` is a new, separate entry point.
 
-The supported flags are `--adapter claude|codex`, `--corpus <file.json>`, `--cat <category>`, `--isolate`, `--baseline <file>`, `--ci`, and `--help`/`-h`. The adapter defaults to Claude. Built-in categories are `deletion`, `sudo`, `curl-pipe`, `infra`, `secrets`, `env`, `read-escape`, `git`, `data`, and `file-write`. Custom categories come from the suite. Exit codes and JSON field meanings stay compatible throughout v2. Built-in runs require `--baseline` with `--ci`; custom runs can gate on expectations alone. Console text and Markdown layout are intended for humans.
+The supported flags are `--adapter claude|codex`, `--corpus <file.json>`, `--cat <category>`, `--isolate`, `--baseline <file>`, `--ci`, and `--help`/`-h`. The adapter defaults to Claude. Built-in categories are `deletion`, `sudo`, `curl-pipe`, `infra`, `secrets`, `env`, `read-escape`, `git`, `data`, `file-write`, and `tamper`. Custom categories come from the suite. Exit codes and JSON field meanings stay compatible throughout v2. Built-in runs require `--baseline` with `--ci`; custom runs can gate on expectations alone. Console text and Markdown layout are intended for humans.
 
 `results.json` has `schemaVersion: 1` and these fields:
 
