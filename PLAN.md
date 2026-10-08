@@ -2,7 +2,7 @@
 
 Turn an unsafe allowance or unwanted block into a reviewed repository test, then show whether a policy change fixes it while preserving ordinary work. Build on the custom suites, exact expectations, baseline comparisons, and reports shipped in v2.0.0.
 
-Updated 8 October 2026. Stages 1 and 2 are merged in [PR 2](https://github.com/pratik-mahalle/failproof-chaos/pull/2), and stage 3 is merged in [PR 3](https://github.com/pratik-mahalle/failproof-chaos/pull/3). All ten jobs pass on [merged main](https://github.com/pratik-mahalle/failproof-chaos/actions/runs/37729502207). These additions form v2.1.0. Stage 4 remains planned. The completed v2.0.0 plan is retained below as release history. Human timing and independent user feedback remain post-release validation work.
+Updated 8 October 2026. Stages 1 and 2 are merged in [PR 2](https://github.com/pratik-mahalle/failproof-chaos/pull/2), and stage 3 is merged in [PR 3](https://github.com/pratik-mahalle/failproof-chaos/pull/3). All ten jobs pass on [the release commit](https://github.com/pratik-mahalle/failproof-chaos/actions/runs/37730340840), published as [v2.1.0](https://github.com/pratik-mahalle/failproof-chaos/releases/tag/v2.1.0). Stage 4 is implemented on `feat/guard-sensitivity`; its pull request records CI validation. The completed v2.0.0 plan is retained below as release history. Human timing and independent user feedback remain post-release validation work.
 
 ## Delivery order
 
@@ -108,14 +108,22 @@ Schema 1, default Claude behavior, and existing exit codes remain compatible. `a
 
 Package the pilot's controlled guard-disabling rehearsal when a user needs to assess missing coverage. Start with a small explicit list of supported installed-pack policies.
 
-- [ ] Require a passing unmodified suite before evaluating weakened configurations.
-- [ ] Copy the selected test configuration into a temporary home, disable one supported guard at a time, verify that the change took effect, and rerun the same exact expectations.
-- [ ] Report detected changes, missed changes, unsupported targets, and invalid measurements separately. An engine error is not a successful detection; another policy may continue to enforce the same behavior.
-- [ ] Count detection only when a relevant case's exact expectation exposes the selected guard's weakening. An unrelated failure is not evidence, and an unchanged result with overlapping protection does not by itself prove inadequate coverage.
-- [ ] Preserve the user's installed policies, settings, fixtures, and baselines, and remove temporary state on success or failure.
-- [ ] Confirm detection of a known disabled guard, a missed change under a deliberately inadequate suite, an unsupported target, and an engine failure. Keep results separate from ordinary benchmark scores.
+- [x] Require a passing unmodified suite before evaluating weakened configurations.
+- [x] Copy the selected test configuration into a temporary home, disable one supported guard at a time, verify that the change took effect, and rerun the same exact expectations.
+- [x] Report detected changes, missed changes, unsupported targets, and invalid measurements separately. An engine error is not a successful detection; another policy may continue to enforce the same behavior.
+- [x] Count detection only when a relevant case's exact expectation exposes the selected guard's weakening. An unrelated failure is not evidence, and an unchanged result with overlapping protection does not by itself prove inadequate coverage.
+- [x] Preserve the user's installed policies, settings, fixtures, and baselines, and remove temporary state on success or failure.
+- [x] Confirm detection of a known disabled guard, a missed change under a deliberately inadequate suite, an unsupported target, and an engine failure. Keep results separate from ordinary benchmark scores.
 
 **Acceptance:** a developer can identify which selected weakened guards their suite catches and which require investigation. Describe results as sensitivity to these specific changes; do not advertise comprehensive attack resistance.
+
+### Stage 4 validation — 8 October 2026
+
+`sensitivity.mjs` reuses schema-1 validation and adapter decoding. It supports three explicit targets (`block-env-files`, `block-sudo`, and `block-read-outside-cwd`) in a verified installed official pack. A separate probe checks the engine's activity record for selection before and removal after each change. Relevant nonbenign expectation failures count as detection; engine errors, unrelated failures, and ordinary-work failures do not.
+
+Local Node 22 checks passed on engines 1.0.3, 1.0.9, and 1.0.10 with both Claude and Codex adapters. In each of six combinations, the ordinary runner and copied configuration agree on all nine cases from a nested project cwd. All three disabled guards are detected; an ordinary-only suite misses all three; an unknown target is unsupported. Project parameters retain precedence over local and user values. Source policies, settings, fixtures, and baselines remain unchanged.
+
+Offline checks cover errors before and after weakening, nonpassing starting suites, stale or missing engine activity, overlapping guards, unrelated and benign-only failures, artifact tampering, source changes, output aliases, and temporary cleanup. The existing eight Claude and two Codex CI jobs now also run the real-engine sensitivity checks and retain their reports. No benchmark baseline or expected decision was changed.
 
 ## Value measurements and scope limits
 
