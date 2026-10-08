@@ -112,6 +112,11 @@ jobs:
         run: failproofai policies add FailproofAI/policies@06b802b63f4f
       - name: Verify detected and missed guard changes
         run: node test-sensitivity-engine.mjs "$RUNNER_TEMP/sensitivity-reports" claude
+      - name: Check that broken policy packs still refuse
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/fault-reports"
+          node faults.mjs --out "$RUNNER_TEMP/fault-reports/faults.json" --baseline baselines/faults.json
       - name: Compare all policies with the reviewed snapshot
         env:
           FAILPROOF_PROFILE: built-in / all
@@ -184,4 +189,11 @@ jobs:
           path: |
             ${{ runner.temp }}/sensitivity-reports/failproof-sensitivity-*/*.json
             ${{ runner.temp }}/sensitivity-reports/failproof-sensitivity-*/*.log
+          if-no-files-found: error
+      - name: Upload fault-injection report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: faults-${{ matrix.os }}-node${{ matrix.node }}-engine-${{ matrix.engine }}
+          path: ${{ runner.temp }}/fault-reports/faults.json
           if-no-files-found: error
