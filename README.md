@@ -22,7 +22,7 @@
 
 ## What this does
 
-**v2.2.0: check whether your suite detects disabled guards.** See [release notes](CHANGELOG.md).
+**v3.0.0: check whether an agent can switch failproofai off, and whether a broken pack still refuses.** See [guard integrity](#guard-integrity) and the [release notes](CHANGELOG.md).
 
 Run `sensitivity.mjs` after your custom suite passes. It disables selected guards in a temporary configuration and reports which changes your tests detect, which they miss, and which checks are unsupported or invalid.
 

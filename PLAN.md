@@ -46,7 +46,7 @@ Today `adapter.mjs` reports the fail-closed deny as `ERROR`, so the harness cann
 | 2 | `faults.mjs` fault-injection check | A reviewed `baselines/faults.json` passes in all eight Claude CI jobs; fake-engine tests cover every exit path |
 | 3 | Pre-commit gate recipe and v3.0.0 release notes | A developer can copy one hook that runs the suite and fault check when guard config changes |
 
-Status: all three stages are implemented on `feat/guard-integrity` in the commits after 5d07536; not yet pushed or merged.
+Status: all three stages are complete, merged to `main` in 5bb4e5a, and ship in v3.0.0 (8 October 2026).
 
 **Why a major version.** The built-in corpus grows from 55/44 to 76/47 cases, so every saved built-in baseline reports new cases and `--ci` exits 2 until it is reviewed. The headline held percentage also changes meaning. By the README's own compatibility rule, corpus additions are allowed in a minor release. v3.0.0 is a deliberate product choice to mark the new "guard integrity" scope. State this plainly in the changelog.
 

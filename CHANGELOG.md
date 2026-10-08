@@ -1,6 +1,6 @@
 # Changelog
 
-## v3.0.0 — guard integrity — unreleased
+## v3.0.0 — guard integrity — 2026-10-08
 
 - Add the built-in `tamper` category: 21 attacks and 3 controls checking whether an agent can pause failproofai, remove policies, delete its state, or rewrite its own hook configuration. The engine's built-in guard is measured in combined and isolated modes (`engine-anti-tamper` cases run with no pack policy enabled). Command-substitution pauses and hook-config rewrites for Claude Code, Codex and Cursor are currently allowed.
 - Add `faults.mjs`: inject one fault at a time into a temporary copy of the installed pack and report whether the `block-sudo` attack stays refused (CLOSED) or is allowed (OPEN). Load-time corruption fails closed (a deleted manifest is the documented exception: it is allowed, because upstream treats it as a fresh machine); policy exceptions, invalid results, hangs, slow loads and unregistered policies fail open. A reviewed `baselines/faults.json` gates CI on CLOSED→OPEN regressions.
