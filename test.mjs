@@ -469,7 +469,7 @@ process.exit(0);
   assert.equal(checkSummary(customBaselineCI).status, 0);
   assert.match(summaryText(), /ALLOW → INSTRUCT/);
   assert.match(summaryText(), /0 held, 1 advisory notices/);
-  assert.match(summaryText(), /FLAG and INSTRUCT are advisory/);
+  assert.match(summaryText(), /FLAG and INSTRUCT do not prove prevention or redaction/);
 
   writeFileSync(corpusFile, JSON.stringify(suite));
   assert.equal(checkSummary().status, 0);
@@ -534,3 +534,6 @@ process.exit(0);
 }
 
 await import("./test-case.mjs");
+await import("./test-adapter.mjs");
+await import("./test-context.mjs");
+await import("./test-codex.mjs");

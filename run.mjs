@@ -8,6 +8,8 @@ import { resolve, join, dirname, basename, sep } from "node:path";
 import { isDeepStrictEqual, parseArgs } from "node:util";
 import { CORPUS, CONTROLS } from "./corpus.mjs";
 import { validateCorpus } from "./suite.mjs";
+import { classify } from "./adapter.mjs";
+import { captureContext } from "./config-context.mjs";
 
 const binary = process.env.FAILPROOFAI_BIN || "failproofai";
 const BIN = binary.includes("/") ? resolve(binary) : binary;
@@ -64,7 +66,7 @@ function probe(args) {
   return p.stdout.trim().replace(/\x1b\[[0-9;]*m/g, "");
 }
 
-function isolate(cases) {
+function isolate(cases, adapter) {
   const root = realpathSync(env.FAILPROOFAI_PACK_DIR || join(env.FAILPROOFAI_HOME || join(homedir(), ".failproofai"), "policies", "packs"));
   const manifest = JSON.parse(readFileSync(join(root, "installed.json"), "utf8"));
   if (manifest?.schemaVersion !== 1 || !Array.isArray(manifest.packs)) throw new Error("Unsupported installed policy manifest");
@@ -88,47 +90,17 @@ function isolate(cases) {
     const entry = `artifacts/${i}.mjs`;
     mkdirSync(dirname(join(packsDir, entry)), { recursive: true });
     writeFileSync(join(packsDir, entry), contents);
-    return { ...p, entry, effect: "enforce", clis: ["claude"] };
+    return { ...p, entry, effect: "enforce", clis: [adapter] };
   });
   const context = { cwd: isolationDir, env: { ...env, FAILPROOFAI_HOME: home, FAILPROOFAI_PACK_DIR: packsDir, CLAUDE_PROJECT_DIR: isolationDir } };
   return {
     context,
-    packs: packs.map(({ id, version, sha256, commit }) => ({ id, version, sha256, ...(commit ? { commit } : {}) })),
+    packs: packs.map(({ id, version, sha256, commit, entry }) => ({ id, version, sha256, entry, ...(commit ? { commit } : {}) })),
     select(c) {
       const p = packs[sourcePacks.indexOf(selected.get(c.target))];
       writeFileSync(join(packsDir, "installed.json"), JSON.stringify({ schemaVersion: 1, packs: [{ ...p, enabled: [c.target] }] }));
     },
   };
-}
-
-function classify(event, p) {
-  const error = (reason) => ({ verdict: "ERROR", reason });
-  if (p.error || p.signal)
-    return error(p.error?.message || `terminated by ${p.signal}`);
-  // ponytail: known failure messages distinguish engine errors from policy catches;
-  // use structured errors when failproofai exposes them.
-  if (/could not evaluate this call|failproofaid could not be reached|different protocol version|policy pack this machine is configured to enforce is not running/.test(`${p.stdout}\n${p.stderr}`))
-    return error((p.stderr || p.stdout).trim());
-  if (p.status === 2) return { verdict: "DENY", reason: p.stderr?.trim() || "hook exited 2 (blocking decision)" };
-  if (p.status !== 0) return error(`engine exited ${p.status}: ${p.stderr?.trim() || "no diagnostic"}`);
-  const text = p.stdout?.trim();
-  if (!text) return { verdict: "ALLOW", reason: "no decision emitted" };
-  let out;
-  try { out = JSON.parse(text); } catch { return error("invalid JSON from engine"); }
-  if (!out || typeof out !== "object" || Array.isArray(out)) return error("invalid hook response");
-  const hso = out.hookSpecificOutput ?? {};
-  if (!hso || typeof hso !== "object" || Array.isArray(hso)) return error("invalid hookSpecificOutput");
-  const decision = hso.permissionDecision ?? out.decision;
-  const ctx = hso.additionalContext ?? "";
-  const reason = hso.permissionDecisionReason ?? out.reason ?? "";
-  if (typeof ctx !== "string" || typeof reason !== "string") return error("invalid hook context or reason");
-  if (decision !== undefined && !["deny", "block", "ask", "allow", "approve"].includes(decision))
-    return error(`unknown hook decision: ${String(decision)}`);
-  if (decision === "deny" || decision === "block") return { verdict: "DENY", reason };
-  if (decision === "ask") return { verdict: "ASK", reason };
-  if (ctx.trim()) return { verdict: event === "PostToolUse" ? "FLAG" : "INSTRUCT", reason: ctx.trim() };
-  if (decision !== undefined) return { verdict: "ALLOW", reason: reason || "permissive decision" };
-  return error("response contains no recognized decision or context");
 }
 
 function protectInput(path, label) {
@@ -172,7 +144,7 @@ function appendJobSummary() {
   }
   const text = (value) => cell(plain(value).slice(0, 240));
   const md = [`## Failproof Chaos · ${text(process.env.FAILPROOF_PROFILE || job.mode)}\n`,
-    `Engine: **${text(job.engine?.version ?? "unavailable")}** · ${text(process.platform)} · Node ${text(process.version)}.`,
+    `Engine: **${text(job.engine?.version ?? "unavailable")}** · adapter: **${text(job.adapter ?? "unavailable")}** · ${text(process.platform)} · Node ${text(process.version)}.`,
     `Suite: ${text(job.mode === "unavailable" ? "unavailable" : job.options.corpus || "built-in")} · category: ${text(job.options.cat ?? "all")} · mode: **${job.mode}**${job.mode === "isolated" ? " (policy defaults)" : job.mode === "combined" ? " (project configuration)" : ""}.\n`];
   if (runError || !job.rows) {
     md.push(`**INVALID RUN — incomplete measurement.** ${text(runError || "No current results available")}.\n`);
@@ -185,7 +157,8 @@ function appendJobSummary() {
       `Attacks: **${s.allowed} allowed**, ${s.held} held, ${s.flagged} advisory notices, ${s.errors} errors.`,
       `Ordinary controls: **${s.controlsAllowed}/${s.controlsTotal} allowed**, ${s.falsePositives} unwanted blocks or notices, ${s.controlErrors} errors.`,
       c ? `Baseline: ${text(c.baseline)} · **${c.changes.filter((r) => r.kind === "REGRESSION").length} regressions** · ${c.unbaselined.length} new or changed cases · ${c.removed.length} removed cases.` : "Baseline: not supplied.\n",
-      "\nDENY and ASK hold execution at the decision level. FLAG and INSTRUCT are advisory; live enforcement is not verified.\n");
+      `Context: ${job.runContext.configFiles.filter((f) => f.status === "present").length}/3 configuration sources present, ${job.runContext.configFiles.filter((f) => f.status === "missing").length} missing, ${job.runContext.configFiles.filter((f) => ["invalid", "error"].includes(f.status)).length} invalid/unreadable. Pack artifacts: ${job.runContext.packs === null ? "identity unavailable" : `${job.runContext.packs.filter((p) => p.artifact?.status === "verified").length}/${job.runContext.packs.length} verified`}. ${c ? `Source context vs baseline: ${c.contextChanged === null ? "unavailable" : c.contextChanged ? "changed" : "unchanged"}.` : ""} Fingerprints do not prove effective configuration.`,
+      "\nDENY and ASK hold execution at the decision level. Codex post-tool blocks are FLAG (the tool already ran). FLAG and INSTRUCT do not prove prevention or redaction; live enforcement is not verified.\n");
     const review = new Map();
     const add = (id, label) => review.set(id, [...(review.get(id) || []), label]);
     for (const r of rows) if (r.verdict === "ERROR" || (r.expect && r.expect !== r.verdict)) add(r.id, r.verdict === "ERROR" ? "Engine error" : "Expectation failed");
@@ -210,19 +183,20 @@ function appendJobSummary() {
   appendFileSync(path, md.join("\n") + "\n");
 }
 
-function readBaseline(path, mode) {
+function readBaseline(path, mode, adapter) {
   protectInput(path, "Baseline");
   const data = readJSON(path, "Baseline");
   if (!Array.isArray(data) && data?.schemaVersion !== 1) throw new Error("Unsupported baseline schema");
   if (!Array.isArray(data) && ![undefined, "combined", "isolated"].includes(data.mode)) throw new Error("Invalid baseline mode");
   if ((data.mode ?? "combined") !== mode) throw new Error("Baseline mode must match this run");
+  if ((data.adapter ?? "claude") !== adapter) throw new Error("Baseline adapter must match this run (legacy baselines use claude)");
   const attacks = Array.isArray(data) ? data : data.results;
   const controls = Array.isArray(data) ? [] : data.controls ?? [];
   if (!Array.isArray(attacks) || !Array.isArray(controls) || !attacks.length && !controls.length)
     throw new Error("Baseline must contain nonempty results or controls");
   const rows = [...attacks, ...controls];
   const seen = new Set();
-  return rows.map((r) => {
+  const checked = rows.map((r) => {
     const verdict = r?.verdict === "SANITIZE" ? "FLAG" : r?.verdict;
     if (!r || typeof r.id !== "string" || !r.id || seen.has(r.id) || typeof r.cat !== "string" ||
         !["PreToolUse", "PostToolUse"].includes(r.event) || typeof r.tool_name !== "string" ||
@@ -234,23 +208,28 @@ function readBaseline(path, mode) {
     seen.add(r.id);
     return { ...r, verdict };
   });
+  return { rows: checked, runContext: data.runContext ?? null };
 }
 
 function main() {
   const { values: options } = parseArgs({ options: {
     cat: { type: "string" }, baseline: { type: "string" }, ci: { type: "boolean" },
-    isolate: { type: "boolean" }, corpus: { type: "string" },
+    isolate: { type: "boolean" }, corpus: { type: "string" }, adapter: { type: "string", default: "claude" },
     help: { type: "boolean", short: "h" },
   } });
   if (options.help) {
-    console.log("Usage: node run.mjs [--corpus <file.json>] [--cat <category>] [--isolate] [--baseline <file>] [--ci]\n" +
+    console.log("Usage: node run.mjs [--adapter claude|codex] [--corpus <file.json>] [--cat <category>] [--isolate] [--baseline <file>] [--ci]\n" +
+      "--adapter defaults to claude. Codex requires a native --corpus suite.\n" +
       "--corpus replaces built-in cases with a JSON suite containing exact expected verdicts.\n" +
       "--isolate tests only each case's target policy in a temporary home.\n" +
       "--ci requires --baseline or --corpus. Exit: 0 success, 1 regression/expectation failure, 2 invalid run/comparison.\n" +
       `Built-in categories: ${[...new Set([...CORPUS, ...CONTROLS].map((c) => c.cat))].join(", ")}. Custom categories come from the suite.`);
     return;
   }
-  job = { options, mode: options.isolate ? "isolated" : "combined" };
+  const adapter = options.adapter;
+  job = { options, adapter, mode: options.isolate ? "isolated" : "combined" };
+  if (!["claude", "codex"].includes(adapter)) throw new Error("--adapter must be claude or codex");
+  if (adapter === "codex" && !options.corpus) throw new Error("--adapter codex requires --corpus with native payloads");
   for (const option of ["corpus", "baseline"])
     if (options[option] !== undefined && !options[option].trim()) throw new Error(`--${option} requires a nonempty file path`);
   if (options.ci && !options.baseline && !options.corpus) throw new Error("--ci requires --baseline <file> or --corpus <file.json>");
@@ -259,11 +238,15 @@ function main() {
   const cases = source.filter((c) => options.cat === undefined || c.cat === options.cat);
   if (!cases.length) throw new Error(`Unknown category: ${options.cat}`);
   // Read before running or writing artifacts, so bad input preserves existing results.
-  const baseline = options.baseline ? readBaseline(options.baseline, mode).filter((r) => !options.cat || r.cat === options.cat) : null;
+  const prior = options.baseline ? readBaseline(options.baseline, mode, adapter) : null;
+  const baseline = prior?.rows.filter((r) => !options.cat || r.cat === options.cat) ?? null;
   const engine = { binary: BIN, version: probe(["--version"]) };
   job.engine = engine;
   const policies = probe(["policies"]);
-  const isolation = options.isolate ? isolate(cases) : null;
+  const isolation = options.isolate ? isolate(cases, adapter) : null;
+  const runContext = captureContext({ cwd: isolation?.context.cwd ?? process.cwd(), adapter, mode,
+    env: isolation?.context.env ?? env, isolationPacks: isolation?.packs });
+  job.runContext = runContext;
   const rows = cases.map((c) => {
     isolation?.select(c);
     const payload = {
@@ -271,7 +254,7 @@ function main() {
       tool_name: c.tool_name, tool_input: c.tool_input,
       ...(c.tool_response !== undefined ? { tool_response: c.tool_response } : {}),
     };
-    const result = { ...c, ...classify(c.event, invoke(["--hook", c.event, "--cli", "claude"], JSON.stringify(payload), isolation?.context)) };
+    const result = { ...c, ...classify(c.event, invoke(["--hook", c.event, "--cli", adapter], JSON.stringify(payload), isolation?.context), adapter) };
     return { ...result, held: held(result) };
   });
   const results = rows.filter((r) => r.tier !== "benign");
@@ -282,7 +265,8 @@ function main() {
   const summary = summarize(rows);
   const cats = [...new Set(cases.map((c) => c.cat))];
   const categories = Object.fromEntries(cats.map((cat) => [cat, summarize(rows.filter((r) => r.cat === cat))]));
-  const comparison = baseline && { baseline: options.baseline, changes: [], unbaselined: [], removed: [] };
+  const comparison = baseline && { baseline: options.baseline, changes: [], unbaselined: [], removed: [],
+    contextChanged: prior.runContext ? !isDeepStrictEqual(prior.runContext, runContext) : null };
   if (comparison) {
     const previous = new Map(baseline.map((r) => [r.id, r]));
     for (const r of rows) {
@@ -301,7 +285,7 @@ function main() {
   const incomplete = comparison && (comparison.unbaselined.length || comparison.removed.length);
   const valid = summary.total - summary.errors;
   const pct = valid ? `${((summary.held / valid) * 100).toFixed(0)}%` : "n/a";
-  console.log(`\nfailproof chaos monkey · engine ${engine.version} · ${mode} · ${results.length} attacks + ${controls.length} controls\n`);
+  console.log(`\nfailproof chaos monkey · engine ${engine.version} · ${adapter} · ${mode} · ${results.length} attacks + ${controls.length} controls\n`);
   for (const [cat, s] of Object.entries(categories)) {
     console.log(`${plain(cat)} (${s.held}/${s.total} attacks held · ${s.flagged} notices · ${s.allowed} attacks allowed · ${s.errors} attack errors · ${s.controlsAllowed}/${s.controlsTotal} controls allowed · false positives: ${s.falsePositives} · control errors: ${s.controlErrors})`);
     for (const r of rows.filter((r) => r.cat === cat)) console.log(`  ${r.verdict.padEnd(8)} ${r.tier.padEnd(7)} ${r.coverage.padEnd(12)} ${plain(r.id).padEnd(11)} ${plain(attack(r)).slice(0, 60)}`);
@@ -327,9 +311,9 @@ function main() {
   const md = ["# failproof chaos monkey — results\n",
     `Engine: \`${cell(engine.binary)}\` **${cell(engine.version)}**. Generated: ${new Date().toISOString()}.\n`,
     `**${score}** · **${summary.evasionsHeld}/${summary.evasionsTotal} evasions held**.\n`,
-    `Mode: **${mode}**. **${controlScore}**.\n`,
+    `Adapter: **${adapter}**. Mode: **${mode}**. **${controlScore}**.\n`,
     "Payloads are sent to the hook engine. Attack commands are never executed by this harness.\n",
-    "Held means DENY or ASK. FLAG and INSTRUCT are notices; redaction is not verified. Errors are excluded from the held percentage.\n",
+    "Held means DENY or ASK. Codex post-tool blocks count as FLAG because the tool already ran. FLAG and INSTRUCT do not prove prevention; redaction is not verified. Errors are excluded from the held percentage.\n",
     options.corpus
       ? "Coverage: labels are authored in the custom suite. Documented coverage requires review against the tested policy's declared scope; attacks default to exploratory. Labels do not change scores or CI comparisons.\n"
       : "Coverage: documented probes match the pinned policy's stated operation and tool scope; exploratory probes test variants whose promised coverage is unconfirmed. Labels describe test intent, independent of which policies are enabled. They do not change scores or CI comparisons.\n"];
@@ -352,7 +336,7 @@ function main() {
   const example = !options.isolate && results.find((r) => r.verdict === "ALLOW");
   if (example) {
     md.push("\nReproduce the first allowed decision (payload only):\n", "```bash",
-      `failproofai --hook ${example.event} <<'PAYLOAD'`,
+      `failproofai --hook ${example.event} --cli ${adapter} <<'PAYLOAD'`,
       JSON.stringify({ cwd: ".", hook_event_name: example.event, tool_name: example.tool_name,
         tool_input: example.tool_input, ...(example.tool_response !== undefined ? { tool_response: example.tool_response } : {}) }),
       "PAYLOAD", "```\n");
@@ -362,6 +346,7 @@ function main() {
   for (const r of controls) md.push(`| ${r.verdict} | ${cell(r.cat)} | ${cell(r.id)} | ${cell(r.target)} | ${cell(attack(r))} | ${cell(r.reason)} | ${cell(r.note)} |`);
   if (comparison) {
     md.push("\n## Baseline comparison\n", `Baseline: \`${cell(options.baseline)}\`. **${regressions.length} regressions**.\n`,
+      `Source context: **${comparison.contextChanged === null ? "unavailable in baseline" : comparison.contextChanged ? "changed" : "unchanged"}**. Paths are part of this comparison; a changed fingerprint alone does not change the CI exit code.\n`,
       "| change | id | before | after |", "|--------|----|--------|-------|");
     for (const r of comparison.changes) md.push(`| ${r.kind} | ${cell(r.id)} | ${r.before} | ${r.after} |`);
     md.push(`\nNew or changed payloads/expectations: ${cell(comparison.unbaselined.join(", ")) || "none"}.`,
@@ -374,14 +359,23 @@ function main() {
       md.push(`| ${r.verdict} | ${r.tier} | ${r.coverage} | ${cell(r.id)} | ${cell(attack(r))} | ${cell(plain(r.reason || r.note).slice(0, 160))} |`);
     md.push("");
   }
-  md.push("## Policy configuration\n", "Source configuration captured from `failproofai policies`. Agent wiring status does not affect these direct hook calls.\n",
+  md.push("## Run context\n", `Working directory: \`${cell(runContext.cwd)}\`. Project root: \`${cell(runContext.projectRoot)}\`.`,
+    `Selection: **${runContext.selection}**. Parameters: **${runContext.parameters}**. These are source fingerprints, not proof that settings took effect. No parameter values are added to this record.\n`,
+    "| source | path | status | SHA-256 |", "|--------|------|--------|---------|");
+  for (const f of [...runContext.configFiles, { scope: "installed manifest", ...runContext.manifest }])
+    md.push(`| ${cell(f.scope)} | ${cell(f.path)} | ${cell(f.status)} | ${cell(f.sha256 ?? f.code ?? "—")} |`);
+  md.push("\n| pack | version | declared SHA-256 | artifact status | actual SHA-256 |", "|------|---------|-----------------|-----------------|---------------|");
+  for (const p of runContext.packs ?? [])
+    md.push(`| ${cell(p.id ?? "unavailable")} | ${cell(p.version ?? "—")} | ${cell(p.sha256 ?? "—")} | ${cell(p.artifact?.status ?? p.status)} | ${cell(p.artifact?.sha256 ?? p.artifact?.code ?? p.code ?? "—")} |`);
+  if (runContext.packs === null) md.push("\nPack identity unavailable; inspect the manifest status above.");
+  md.push("\n## Policy configuration\n", "Source configuration captured from `failproofai policies` before isolation. This existing listing may contain parameter values. Agent wiring status does not affect these direct hook calls.\n",
     "```text", policies.replace(/```/g, "'''"), "```\n",
     "## Method\n", "This checks per-call hook decisions, not live agent behavior, daemon latency, or actual secret redaction. " +
     (options.isolate ? "Each payload enables only its target pack policy, with default parameters, in a temporary home and cwd. The engine's built-in anti-tamper guard remains active; it does not match these payloads.\n" :
       "Policy targets describe test intent; another enabled policy may catch the payload.\n") +
     "Environment-dependent stop gates are outside this corpus.\n");
   writeFileSync("results.json", JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), engine,
-    policies, mode, isolation: isolation ? { packs: isolation.packs } : null,
+    policies, mode, adapter, runContext, isolation: isolation ? { packs: isolation.packs } : null,
     category: options.cat ?? null, summary, categories, results, controls, comparison, expectations }, null, 2) + "\n");
   writeFileSync("REPORT.md", md.join("\n"));
   console.log("\nwrote REPORT.md and results.json");

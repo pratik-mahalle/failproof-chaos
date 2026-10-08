@@ -30,7 +30,7 @@ The built-in corpus sends 55 attack payloads and 44 benign controls across ten c
 
 ### Reviewed configurations
 
-These scores match on failproofai **1.0.3 and 1.0.9**, using `FailproofAI/policies@06b802b63f4f`:
+These Claude-adapter scores match on failproofai **1.0.3 and 1.0.9**, using `FailproofAI/policies@06b802b63f4f`:
 
 | Configuration | Attacks held | Advisory notices | Attacks allowed | Benign controls allowed | False positives |
 |---------------|--------------|------------------|-----------------|-------------------------|-----------------|
@@ -69,7 +69,27 @@ Point at another executable with `FAILPROOFAI_BIN=/path/to/failproofai`. Runs di
 
 Combined mode uses the installed configuration, including project settings. Isolated mode copies installed pack artifacts into a temporary home and cwd, verifies their SHA-256 hashes, and selects one target policy per payload. It uses default parameters and enforcement mode, regardless of the source pack's enabled list, CLI scope, or observe mode. User settings remain intact. A missing or ambiguous target is an error. The engine's built-in anti-tamper guard remains active and does not match this corpus.
 
-The hook payload format is Claude-compatible, and the runner explicitly selects the `claude` CLI adapter. Other agent adapters and Windows are outside the verified compatibility set.
+The runner defaults to `--adapter claude`. `--adapter codex` requires an explicit native `--corpus` suite; it does not translate the built-in Claude corpus. Other adapters and Windows are outside the verified compatibility set.
+
+### Native Codex fixtures
+
+After installing the pinned pack, run the [Codex suite](examples/codex-cases.json) in a separate output directory:
+
+```bash
+chaos_repo="$PWD"
+codex_reports=$(mktemp -d)
+(
+  cd "$codex_reports"
+  node "$chaos_repo/run.mjs" --adapter codex \
+    --corpus "$chaos_repo/examples/codex-cases.json" --isolate --ci
+)
+```
+
+This diagnostic suite covers shell decisions, post-tool feedback, and ordinary/protected `apply_patch` Add File, Update File, and multi-file operations. Six protected-patch cases retain their desired `DENY` expectations despite the pinned pack returning `ALLOW`; the command therefore exits **1**. Local checks on engines 1.0.3, 1.0.9, and 1.0.10 each produced 9/15 matching expectations, all six benign controls allowed, and zero errors. This verifies those engine responses, not a full Codex OS/Node matrix. The fixture commands and patches are never executed.
+
+Native cases use the existing schema-1 fields. Shell hooks use `tool_name: "Bash"`; patches use `tool_name: "apply_patch"`. Both carry their text in `tool_input.command`. Preserve that raw patch name in fixtures: Failproof normalizes it to `Edit` during evaluation. `write_stdin` does not emit another `PreToolUse` for an existing command, so this suite does not claim coverage of later stdin writes. See the [official hook contract](https://learn.chatgpt.com/docs/hooks).
+
+Codex decoding is deliberately bounded: unsupported response shapes or decisions, including `ask` and input rewrites, produce `ERROR`. A Codex `PostToolUse` block or exit 2 becomes `FLAG`, because the tool has already run. These tests measure engine responses through the selected adapter; they do not verify live Codex enforcement.
 
 ## Test your team's workflows
 
@@ -127,9 +147,9 @@ Run from the intended project directory and check that any redacted case still r
 
 | Verdict | Meaning |
 |---------|---------|
-| `DENY` | Blocking decision or hook exit 2 |
-| `ASK` | Escalation to a human |
-| `FLAG` | PostToolUse context notice; redaction is not verified |
+| `DENY` | Blocking decision or hook exit 2; for Codex, only before the tool runs |
+| `ASK` | Escalation to a human in the Claude adapter; unsupported Codex output is ERROR |
+| `FLAG` | PostToolUse notice or Codex post-tool block feedback; redaction is not verified |
 | `INSTRUCT` | PreToolUse advisory instruction |
 | `ALLOW` | Empty successful output or explicit permissive decision |
 | `ERROR` | Missing binary, timeout, crash, malformed response, or recognized engine/pack failure |
@@ -170,15 +190,36 @@ Attack protection ranks are **DENY/ASK > FLAG/INSTRUCT > ALLOW**. Benign control
 | 1 | `--ci` found weaker attack protection, stronger interference with benign work, or an expectation mismatch |
 | 2 | Invalid arguments/baseline, engine error, incomplete CI comparison, or failed summary output after an otherwise successful run |
 
-Matching IDs must have unchanged event, tool input/output, attack/control classification, and expected verdict when present. Isolated comparisons also require the same target policy. New, changed, or removed cases require review before CI passes. Modes must match; `--cat` scopes both sides to the same category. Engine versions and policy configuration may differ so upgrades can be compared deliberately. Invalid measurements and incomplete CI comparisons take precedence over mismatches and exit 2.
+Matching IDs must have unchanged event, tool input/output, attack/control classification, and expected verdict when present. Isolated comparisons also require the same target policy. New, changed, or removed cases require review before CI passes. Modes and adapters must match; baselines without an adapter field are treated as Claude, and cross-adapter comparisons are rejected. `--cat` scopes both sides to the same category. Engine versions and policy configuration may differ so upgrades can be compared deliberately. Invalid measurements and incomplete CI comparisons take precedence over mismatches and exit 2.
 
 Legacy array baselines and schema-1 baselines without controls or coverage labels remain readable. Legacy SANITIZE becomes FLAG; saved `held` booleans are ignored. v1.2 adds `ok-write-05` and `ok-write-06`, both reviewed as ALLOW, without changing existing payloads or expectations. A v1.1 baseline reports those two IDs as unbaselined and needs review before the full v1.2 CI gate passes. v1.0 baselines also need review of the 30 cases added in v1.1; preview baselines additionally need review of the corrected deletion payloads introduced in v1.0.
 
 Outputs are written to the current directory. Store baselines separately from `results.json` and `REPORT.md`; aliases to either output are rejected. Review failures before replacing a baseline.
 
-The [GitHub Actions workflow](.github/workflows/ci.yml) tests both engine versions on Node 22/24 and Ubuntu/macOS. Each job runs `node test.mjs`, installs fresh all/default policy configurations, compares all three profiles with their reviewed snapshots, and checks the custom example in each profile. `node test.mjs` uses a fake engine and temporary files to check scoring, exact expectations, suite validation, payload safety, isolation, baseline safety, CLI exits, and error handling without network access.
+The [GitHub Actions workflow](.github/workflows/ci.yml) retains eight Claude jobs: engines 1.0.3/1.0.9 × Node 22/24 × Ubuntu/macOS. Each job runs `node test.mjs`, installs fresh all/default policy configurations, compares all three profiles with their reviewed snapshots, and checks the custom example in each profile. Two focused Codex jobs use engine 1.0.10 on Ubuntu/Node 22 and macOS/Node 24. These jobs verify the known diagnostic results and the configuration comparison below; they do not turn the six desired patch refusals into passing expectations.
 
-Each job uploads a uniquely named `reports-<os>-node-<version>-engine-<version>` artifact. Its `all/`, `defaults/`, `isolated/`, `custom-all/`, `custom-defaults/`, and `custom-isolated/` directories each contain `results.json` and `REPORT.md` for completed measurements. Remaining profiles continue after a failed comparison; uploading runs even after failures. A profile that fails before generating reports has no files, so an older profile or checked-in baseline cannot masquerade as a fresh measurement. Download the artifacts from the workflow run's summary page.
+`node test.mjs` includes all offline checks, using fake engine responses and temporary files. It covers scoring, exact expectations, suite validation, adapter decoding, payload safety, configuration fingerprints, isolation, baseline safety, CLI exits, and error handling.
+
+Each Claude job uploads a uniquely named `reports-<os>-node-<version>-engine-<version>` artifact. Its `all/`, `defaults/`, `isolated/`, `custom-all/`, `custom-defaults/`, and `custom-isolated/` directories each contain `results.json` and `REPORT.md` for completed measurements. Remaining profiles continue after a failed comparison; uploading runs even after failures. A profile that fails before generating reports has no files, so an older profile or checked-in baseline cannot masquerade as a fresh measurement. Codex jobs upload `codex-<os>-node<version>-engine1.0.10`, containing reports, runner logs, and verification results. Download artifacts from the workflow run's summary page.
+
+### Configuration evidence and comparisons
+
+`runContext` records the tested cwd and project root, adapter, configuration source paths and SHA-256 fingerprints, and installed pack identities and selections. `configFiles` covers project, local, and user policy configuration; `packs` includes declared artifact hashes and their verification status. Missing, invalid, or unreadable sources stay explicit. An unavailable manifest produces `packs: null`, which differs from an empty installed-pack list.
+
+Source discovery follows the pinned engines' nearest `.failproofai` project marker. For each policy, project parameters take precedence over local parameters, then user parameters; the first defining scope supplies the whole parameter object. Fingerprints identify source files and matching artifact bytes, not whether the engine applied a configuration. `runContext` excludes parameter values, credentials, and environment contents; the existing human-readable `policies` listing and case reports can still contain supplied data.
+
+`comparison.contextChanged` is `true` or `false` when the baseline contains context, otherwise `null`. It compares recorded paths as well as fingerprints, so fresh isolation directories or differently formatted configuration files can count as changed. This field is advisory and does not change the CI exit code. Isolated runs remain labeled as default parameters with each case's target selected separately.
+
+To reproduce a parameter change using the installed pinned pack and engine:
+
+```bash
+FAILPROOFAI_HOME="${FAILPROOFAI_HOME:-$HOME/.failproofai}" \
+  node test-codex-engine.mjs /absolute/report-parent
+```
+
+Set `FAILPROOFAI_HOME` to the home containing the pinned pack; the command defaults to `~/.failproofai`. The script creates a unique report directory beneath the supplied parent, or beneath the system temporary directory when no argument is given.
+
+The check copies the pack into two temporary homes and writes each home's user-scope `policies-config.json`. Both runs use the same project cwd and native Bash suite. The current configuration denies a read outside the project; the candidate adds that directory to `block-read-outside-cwd.allowPaths`. The candidate is compared with the saved current baseline: the outside read changes `DENY` → `ALLOW`, one expectation and regression fail, and the ordinary repository read remains `ALLOW`. The script verifies this intentional exit 1; it succeeds only when the recorded behavior matches. Source settings and the checked-in baselines remain unchanged.
 
 ### GitHub workflow summaries
 
@@ -192,7 +233,7 @@ Summaries use the invocation's in-memory results, never a previous `results.json
 
 v2.0.0 marks the custom workflow testing milestone and preserves the v1.2 CLI behavior, exit codes, schema-1 field meanings, legacy baseline support, and all 99 built-in cases. Existing v1.2 built-in suites and baselines require no migration. The new custom suite fields are additive.
 
-The supported flags are `--corpus <file.json>`, `--cat <category>`, `--isolate`, `--baseline <file>`, `--ci`, and `--help`/`-h`. Built-in categories are `deletion`, `sudo`, `curl-pipe`, `infra`, `secrets`, `env`, `read-escape`, `git`, `data`, and `file-write`. Custom categories come from the suite. Exit codes and JSON field meanings stay compatible throughout v2. Built-in runs require `--baseline` with `--ci`; custom runs can gate on expectations alone. Console text and Markdown layout are intended for humans.
+The supported flags are `--adapter claude|codex`, `--corpus <file.json>`, `--cat <category>`, `--isolate`, `--baseline <file>`, `--ci`, and `--help`/`-h`. The adapter defaults to Claude. Built-in categories are `deletion`, `sudo`, `curl-pipe`, `infra`, `secrets`, `env`, `read-escape`, `git`, `data`, and `file-write`. Custom categories come from the suite. Exit codes and JSON field meanings stay compatible throughout v2. Built-in runs require `--baseline` with `--ci`; custom runs can gate on expectations alone. Console text and Markdown layout are intended for humans.
 
 `results.json` has `schemaVersion: 1` and these fields:
 
@@ -202,13 +243,15 @@ The supported flags are `--corpus <file.json>`, `--cat <category>`, `--isolate`,
 | `engine` | Executable `binary` and reported `version` strings |
 | `policies` | Source policy listing as a string |
 | `mode` | `combined` or `isolated` |
-| `isolation` | Null in combined mode; otherwise `{packs: [...]}` with pack id, version, SHA-256, and optional commit |
+| `adapter` | `claude` or `codex`; absent in older Claude reports |
+| `runContext` | Source-only configuration metadata: tested cwd/project root, adapter/mode, configuration fingerprints, manifest status, and pack identities/artifact verification |
+| `isolation` | Null in combined mode; otherwise `{packs: [...]}` with pack id, version, SHA-256, copied artifact entry, and optional commit |
 | `category` | Selected category string or null |
 | `categories` | Object keyed by category name, with the same count fields as summary for each category |
 | `summary` | Attack counts: total, held, flagged, allowed, errors, evasionsHeld, evasionsTotal. Control counts: controlsTotal, controlsAllowed, falsePositives, controlErrors |
 | `results` | Attack rows only |
 | `controls` | Benign rows only |
-| `comparison` | Null without a baseline; otherwise baseline path, changes, unbaselined IDs, and removed IDs |
+| `comparison` | Null without a baseline; otherwise baseline path, changes, unbaselined IDs, removed IDs, and advisory `contextChanged` boolean or null |
 | `expectations` | Null for built-in runs; otherwise total, passed, failed, and mismatches with id, expected, and actual verdict |
 
 Rows contain `id`, `cat`, `target`, `tier`, `coverage`, `event`, `tool_name`, `tool_input`, optional `tool_response`, `note`, `verdict`, `reason`, and `held`. Custom rows also contain `expect`. Tiers are `direct`/`evasion` for attacks and `benign` for controls. The additive `coverage` field is `documented`/`exploratory` for attacks and `benign` for controls; legacy baselines may omit it. A change contains `id`, `before`, `after`, and `kind` (`REGRESSION`, `IMPROVEMENT`, or `CHANGE`). Counts are nonnegative integers; attack and control errors are separate. Custom expectation totals include engine-error rows as mismatches, with actual verdict `ERROR`; those errors still invalidate the run.

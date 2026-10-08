@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add `--adapter codex` for explicit native custom suites, preserving raw shell and `apply_patch` input. Keep Claude as the default and reject comparisons across adapters; legacy baselines mean Claude. Decode supported Codex responses separately, classify post-tool blocks as feedback (`FLAG`), and reject unsupported or malformed responses as `ERROR`.
+- Add source configuration fingerprints, declared pack selections, verified artifact hashes, and working-directory context to schema-1 results and reports. Baselines can show source-context differences without treating hashes as proof of applied settings or changing the verdict gate.
+- Add native Codex fixtures and a reproducible two-configuration comparison. Six protected patch probes retain their desired `DENY` expectations and expose current allowances; diagnostic CI checks those reviewed failures explicitly. Preserve the original eight Claude jobs and add two focused Codex jobs on engine 1.0.10.
 - Add native GitHub workflow summaries for the current invocation, including changed and failing case IDs, exact decisions, reasons, review requirements, and separate attack, ordinary-work, advisory, and error signals. Keep full reports as artifacts. Failed summary writes preserve an existing failure status and make an otherwise successful run exit 2.
 - Add `case.mjs` to create a new single-case schema-1 draft from an explicitly supplied Claude-compatible hook payload and author-selected metadata and expectation. Preserve optional response values, reject invalid inputs and existing destinations, and report omitted capture metadata.
 - Give custom-suite validation errors a case and field context. Document reviewed incident/control pairs, synthetic unsafe-allowance and unwanted-block rehearsals, and baseline-based upgrade reviews.
