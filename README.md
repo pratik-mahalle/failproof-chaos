@@ -56,6 +56,15 @@ Deletion probes now target catastrophic paths such as `/var`. The guard intentio
 
 Allowed attack probes include command substitution, encoded deletion, Python deletion, separate download/execute calls, absolute-path or aliased kubectl, and fragmented secret text. A saved allowance records the policy's current behavior; it does not establish that every probe is within the policy's promised coverage.
 
+## Guard integrity
+
+**v3.0.0** asks two questions the per-policy scores cannot answer: can the agent switch failproofai off, and does a broken pack still refuse?
+
+- `node run.mjs --cat tamper` sends 21 self-disabling payloads: pausing, removing policies, deleting state, and rewriting the agent's own hook configuration. The engine's built-in guard is measured in every mode, including `--isolate`.
+- `node faults.mjs --out faults.json` copies the installed pack into a temporary home and injects one fault at a time: unreadable or invalid manifest, tampered, missing or throwing artifact, slow load, a policy that throws, returns garbage, or hangs, and a declared policy that never registers. Each fault reports CLOSED (the `block-sudo` attack is still refused) or OPEN (it is allowed). Healthy copies must deny the attack and allow the control, or the run is invalid.
+
+With the pinned pack, load-time corruption fails closed, but runtime policy failures and slow loads fail open with only a stderr warning. A deleted manifest also allows everything; upstream treats that as a fresh machine. Compare against `baselines/faults.json` to fail only when a fault that was refused becomes allowed. Your real home is never written; payloads are never executed.
+
 ## Quick start
 
 Use Node.js **22 or 24** on Linux or macOS. The runner has no npm dependencies. Install the engine and the pinned public policy pack:
@@ -140,6 +149,21 @@ Use `{ "schemaVersion": 1, "cases": [...] }` with at least one case. IDs must be
 Run from the team's project directory to use its installed policy configuration and cwd. Paths in the suite are payload data; the runner never reads the named files or executes their commands. Isolated mode uses a temporary cwd and requires installed pack targets. Test standalone custom policy files in combined mode. Each case is a separate hook measurement; this workflow does not replay session state.
 
 Fixtures and generated reports contain the supplied payloads. Use synthetic or reviewed redacted examples, preserving the features needed to reproduce the decision. See [the pilot guide](PILOT.md) for incident authoring, a project-root CI recipe, and results from the initial three-repository trial. Its [unwanted-block rehearsal](examples/pilot-rehearsal.json) intentionally fails with the pinned all-policy pack.
+
+### Gate commits that touch guard configuration
+
+Save as `.git/hooks/pre-commit` in the repository whose agent is guarded, make it executable, and point `CHAOS` at your checkout:
+
+```sh
+#!/bin/sh
+# Re-check guards only when their configuration changes.
+CHAOS=${CHAOS:-$HOME/code/failproof-chaos}
+git diff --cached --name-only | grep -Eq '^(\.failproofai/|\.claude/settings|\.codex/|\.cursor/hooks)' || exit 0
+node "$CHAOS/run.mjs" --corpus .failproofai/chaos-cases.json --ci || exit 1
+node "$CHAOS/faults.mjs" --out "$(mktemp -d)/faults.json" --baseline "$CHAOS/baselines/faults.json" || exit 1
+```
+
+The suite path is your reviewed custom suite. The runner writes `results.json` and `REPORT.md` in the current directory; add them to `.gitignore` or run the hook from a scratch directory. `git commit --no-verify` skips the hook; CI remains the enforced gate.
 
 ### Draft a case from a hook payload
 
@@ -262,6 +286,8 @@ Summaries use the invocation's in-memory results, never a previous `results.json
 ## Stable v2 contract
 
 v2.0.0 marks the custom workflow testing milestone and preserves the v1.2 CLI behavior, exit codes, schema-1 field meanings, legacy baseline support, and all 99 built-in cases. Existing v1.2 built-in suites and baselines require no migration. The new custom suite fields are additive.
+
+v3.0.0 compatibility: schema 1, CLI flags, and exit codes are unchanged. The built-in corpus is now 123 cases (76 attacks, 47 controls) across eleven categories including `tamper`, so saved built-in baselines report the 24 new cases for review. `faults.mjs` is a new, separate entry point.
 
 The supported flags are `--adapter claude|codex`, `--corpus <file.json>`, `--cat <category>`, `--isolate`, `--baseline <file>`, `--ci`, and `--help`/`-h`. The adapter defaults to Claude. Built-in categories are `deletion`, `sudo`, `curl-pipe`, `infra`, `secrets`, `env`, `read-escape`, `git`, `data`, and `file-write`. Custom categories come from the suite. Exit codes and JSON field meanings stay compatible throughout v2. Built-in runs require `--baseline` with `--ci`; custom runs can gate on expectations alone. Console text and Markdown layout are intended for humans.
 
