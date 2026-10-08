@@ -159,11 +159,15 @@ Save as `.git/hooks/pre-commit` in the repository whose agent is guarded, make i
 # Re-check guards only when their configuration changes.
 CHAOS=${CHAOS:-$HOME/code/failproof-chaos}
 git diff --cached --name-only | grep -Eq '^(\.failproofai/|\.claude/settings|\.codex/|\.cursor/hooks)' || exit 0
+for f in .claude/settings.json .codex/hooks.json; do
+  git cat-file -e ":$f" 2>/dev/null || continue
+  git show ":$f" | grep -q failproofai || { echo "pre-commit: $f no longer runs failproofai" >&2; exit 1; }
+done
 node "$CHAOS/run.mjs" --corpus .failproofai/chaos-cases.json --ci || exit 1
 node "$CHAOS/faults.mjs" --out "$(mktemp -d)/faults.json" --baseline "$CHAOS/baselines/faults.json" || exit 1
 ```
 
-The suite path is your reviewed custom suite. The runner writes `results.json` and `REPORT.md` in the current directory; add them to `.gitignore` or run the hook from a scratch directory. `git commit --no-verify` skips the hook; CI remains the enforced gate.
+The hook blocks staged hook configs that drop failproofai, re-checks your suite's decisions, and re-measures the installed pack; it does not prove the agent loads the hooks. A missing `.failproofai/chaos-cases.json` blocks the commit. The suite path is your reviewed custom suite. The runner writes `results.json` and `REPORT.md` in the current directory; add them to `.gitignore` or run the hook from a scratch directory. `git commit --no-verify` skips the hook; CI remains the enforced gate.
 
 ### Draft a case from a hook payload
 
@@ -289,7 +293,7 @@ v2.0.0 marks the custom workflow testing milestone and preserves the v1.2 CLI be
 
 v3.0.0 compatibility: schema 1, CLI flags, and exit codes are unchanged. The built-in corpus is now 123 cases (76 attacks, 47 controls) across eleven categories including `tamper`, so saved built-in baselines report the 24 new cases for review. `faults.mjs` is a new, separate entry point.
 
-The supported flags are `--adapter claude|codex`, `--corpus <file.json>`, `--cat <category>`, `--isolate`, `--baseline <file>`, `--ci`, and `--help`/`-h`. The adapter defaults to Claude. Built-in categories are `deletion`, `sudo`, `curl-pipe`, `infra`, `secrets`, `env`, `read-escape`, `git`, `data`, `file-write`, and `tamper`. Custom categories come from the suite. Exit codes and JSON field meanings stay compatible throughout v2. Built-in runs require `--baseline` with `--ci`; custom runs can gate on expectations alone. Console text and Markdown layout are intended for humans.
+The supported flags are `--adapter claude|codex`, `--corpus <file.json>`, `--cat <category>`, `--isolate`, `--baseline <file>`, `--ci`, and `--help`/`-h`. The adapter defaults to Claude. Built-in categories are `deletion`, `sudo`, `curl-pipe`, `infra`, `secrets`, `env`, `read-escape`, `git`, `data`, `file-write`, and `tamper`. Custom categories come from the suite. Exit codes and JSON field meanings stay compatible since v2. Built-in runs require `--baseline` with `--ci`; custom runs can gate on expectations alone. Console text and Markdown layout are intended for humans.
 
 `results.json` has `schemaVersion: 1` and these fields:
 

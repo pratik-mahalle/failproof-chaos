@@ -103,6 +103,16 @@ process.exit(0);
   assert.deepEqual(report("incomplete.json").comparison.unbaselined, ["manifest-absent"]);
   writeFileSync(join(work, "other-target.json"), JSON.stringify({ ...r, target: "block-env-files" }));
   assert.equal(run(["--out", "y.json", "--baseline", "other-target.json"]).status, 2);
+  const badControl = report("first.json"); badControl.faults.find((f) => f.id === "healthy").control = "DENY";
+  writeFileSync(join(work, "bad-control.json"), JSON.stringify(badControl));
+  assert.equal(run(["--out", "z.json", "--baseline", "bad-control.json"]).status, 2);
+  // A parent-set load timeout must not leak into the healthy calls.
+  const seen = readFileSync(join(work, "calls.log"), "utf8").trim().split("\n").length;
+  process.env.FAILPROOFAI_POLICY_LOAD_TIMEOUT_MS = "1";
+  const leaked = run(["--out", "leak.json"]);
+  delete process.env.FAILPROOFAI_POLICY_LOAD_TIMEOUT_MS;
+  assert.equal(leaked.status, 1);
+  assert.deepEqual(readFileSync(join(work, "calls.log"), "utf8").trim().split("\n").slice(seen, seen + 4).map((l) => l.split("\t")[2]), ["", "", "", ""]);
   const mutated = run(["--out", "mutated.json"], "mutate-source");
   assert.equal(mutated.status, 2);
   assert.match(mutated.stderr, /Source pack changed/);

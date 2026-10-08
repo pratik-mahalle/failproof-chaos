@@ -7,7 +7,7 @@
 - `classify()` accepts `{ failClosed: true }` to decode an engine's fail-closed refusal as DENY. Ordinary runs still report it as ERROR.
 - Document a pre-commit hook that re-runs the suite and fault check when guard configuration changes.
 
-**Why a major version:** the built-in corpus grows to 76 attacks and 47 controls, so saved built-in baselines report new cases and `--ci` exits 2 until reviewed, and the headline held percentage changes. Schema 1, CLI flags and exit codes are unchanged. Codex fault injection, other harnesses, daemon faults and harness-level hook timeouts remain unmeasured.
+**Why a major version:** the built-in corpus grows to 76 attacks and 47 controls, so saved built-in baselines report new cases and `--ci` exits 2 until reviewed, and the headline held percentage changes. Schema 1, CLI flags and exit codes are unchanged. Under the README's compatibility rule, corpus additions are allowed within a minor release; v3.0.0 is a deliberate choice that marks the new guard-integrity scope, not a compatibility break. Codex fault injection, other harnesses, daemon faults and harness-level hook timeouts remain unmeasured.
 
 ## v2.2.0 — guard sensitivity checks — 2026-10-08
 

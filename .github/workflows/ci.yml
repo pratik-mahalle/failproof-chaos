@@ -118,6 +118,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/fault-reports"
           node faults.mjs --out "$RUNNER_TEMP/fault-reports/faults.json" --baseline baselines/faults.json
       - name: Compare all policies with the reviewed snapshot
+        if: ${{ !cancelled() }}
         env:
           FAILPROOF_PROFILE: built-in / all
         run: |

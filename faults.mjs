@@ -15,6 +15,7 @@ const binary = process.env.FAILPROOFAI_BIN || "failproofai";
 const BIN = binary.includes("/") ? resolve(binary) : binary;
 const env = { ...process.env, CI: "1", NO_COLOR: "1", FAILPROOFAI_NO_FIRST_RUN: "1",
   FAILPROOFAI_NO_DOWNLOAD: "1", FAILPROOFAI_TELEMETRY_DISABLED: "1" };
+delete env.FAILPROOFAI_POLICY_LOAD_TIMEOUT_MS; // only the artifact-load-timeout fault sets it
 const fail = (message) => { throw new Error(message); };
 
 const HEAD = 'import { customPolicies, deny, allow } from "failproofai";\n';
@@ -76,7 +77,7 @@ function readBaseline(path, target) {
   if (data.target !== target) fail("Baseline target must match --target");
   // An invalid prior report would hide regressions (ERROR -> OPEN is not CLOSED -> OPEN).
   if (data.faults.some((f) => typeof f?.id !== "string" || !["CLOSED", "OPEN", "ERROR"].includes(f.outcome) || f.outcome === "ERROR" ||
-    (f.stage === "control" && f.outcome !== "CLOSED"))) fail("--baseline must be a valid fault report without errors or unhealthy controls");
+    (f.stage === "control" && (f.outcome !== "CLOSED" || f.control !== "ALLOW" || f.attack !== "DENY")))) fail("--baseline must be a valid fault report without errors or unhealthy controls");
   return new Map(data.faults.map((f) => [f.id, f.outcome]));
 }
 
