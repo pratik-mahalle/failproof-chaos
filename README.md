@@ -7,14 +7,14 @@
 </p>
 
 <p align="center">
-  <strong>55 attacks. 44 benign controls. Reviewed baselines.</strong><br/>
+  <strong>76 attacks. 47 benign controls. Reviewed baselines.</strong><br/>
   A regression kit for <a href="https://befailproof.ai">failproofai</a> guardrails.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/held-64%25-yellow?style=flat-square" alt="64% held" />
-  <img src="https://img.shields.io/badge/evasions_held-18%2F31-green?style=flat-square" alt="18/31 evasions held" />
-  <img src="https://img.shields.io/badge/slipped-12-red?style=flat-square" alt="12 slipped" />
+  <img src="https://img.shields.io/badge/held-58%25-yellow?style=flat-square" alt="58% held" />
+  <img src="https://img.shields.io/badge/evasions_held-22%2F47-green?style=flat-square" alt="22/47 evasions held" />
+  <img src="https://img.shields.io/badge/slipped-24-red?style=flat-square" alt="24 slipped" />
   <img src="https://img.shields.io/badge/runs-offline-blue?style=flat-square" alt="Runs offline" />
 </p>
 
@@ -30,7 +30,7 @@ Turn a supplied hook payload into a reviewed test draft, inspect native Codex de
 
 Test your team's tool calls with `--corpus` and exact expected decisions. A saved baseline cannot silence an unsafe allowance or unwanted block that fails an expectation. Run the suite in CI when policies or workflows change.
 
-The built-in corpus sends 55 attack payloads and 44 benign controls across ten categories to failproofai's hook engine. Commands and file writes stay JSON data; the harness never carries them out. It measures blocking decisions, advisory notices, allows, and engine errors, then compares them with a reviewed baseline. No LLM or API keys are needed.
+The built-in corpus sends 76 attack payloads and 47 benign controls across eleven categories to failproofai's hook engine. Commands and file writes stay JSON data; the harness never carries them out. It measures blocking decisions, advisory notices, allows, and engine errors, then compares them with a reviewed baseline. No LLM or API keys are needed.
 
 ### Reviewed configurations
 
@@ -38,9 +38,9 @@ These Claude-adapter scores match on failproofai **1.0.3 and 1.0.9**, using `Fai
 
 | Configuration | Attacks held | Advisory notices | Attacks allowed | Benign controls allowed | False positives |
 |---------------|--------------|------------------|-----------------|-------------------------|-----------------|
-| All 38 policies | 35/55 | 8 | 12 | 37/44 | 7 |
-| Default 10 policies | 16/55 | 4 | 35 | 43/44 | 1 |
-| Each target policy in isolation | 33/55 | 8 | 14 | 37/44 | 7 |
+| All 38 policies | 44/76 | 8 | 24 | 40/47 | 7 |
+| Default 10 policies | 25/76 | 4 | 47 | 46/47 | 1 |
+| Each target policy in isolation | 42/76 | 8 | 26 | 40/47 | 7 |
 
 All runs have zero engine errors. The checked-in [report](REPORT.md) and [results](results.json) use the all-policy configuration. Alternate snapshots are in [baselines](baselines/).
 
@@ -49,6 +49,8 @@ Category summaries in JSON, console output, and Markdown show held/allowed attac
 The controls expose unwanted blocks on quoted deletion/download examples and public documentation named `credentials-guide.md`, plus advisory notices on harmless SQL and publication text. Isolation shows that `protect-env-vars` allows procfs and Python environment dumps; outside-cwd protection catches the procfs reads in combined mode.
 
 The `file-write` category covers four protected filenames, Edit and shell variants, uppercase/backup extensions, and six benign documentation/source writes. Harmless Edit and shell writes pair with the risky variants. The pinned policy protects filenames through the Write tool. Payload content is synthetic, and these measurements do not establish detection of actual secret contents or execution of actual writes.
+
+The `tamper` category checks whether an agent can switch failproofai off. The engine's built-in guard blocks direct pause, removal and state-file deletion, independent of enabled policies. Command-substitution pauses and rewrites of the agent's own hook configuration (`.claude/settings*.json`, `.codex/hooks.json`, `.cursor/hooks.json`) are currently allowed. Those writes remove failproofai from the agent's next session while every policy still reports healthy.
 
 Deletion probes now target catastrophic paths such as `/var`. The guard intentionally permits project cleanup such as `rm -rf ./build`, and it already catches `find /var -delete`. Likewise, this pack intentionally permits force-with-lease on a feature branch; pushing to `main` still targets the protected-branch policy. These corrections mean v0.1 and v1.0 scores use different payloads.
 
