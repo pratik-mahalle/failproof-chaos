@@ -1,5 +1,5 @@
 // Decode emitted hook decisions; this does not run or verify a live agent.
-export function classify(event, p, adapter = "claude") {
+export function classify(event, p, adapter = "claude", { failClosed = false } = {}) {
   if (adapter === "codex") return classifyCodex(event, p);
   if (adapter !== "claude") return { verdict: "ERROR", reason: `unsupported adapter: ${adapter}` };
   const error = (reason) => ({ verdict: "ERROR", reason });
@@ -7,7 +7,8 @@ export function classify(event, p, adapter = "claude") {
     return error(p.error?.message || `terminated by ${p.signal}`);
   // ponytail: known failure messages distinguish engine errors from policy catches;
   // use structured errors when failproofai exposes them.
-  if (/could not evaluate this call|failproofaid could not be reached|different protocol version|policy pack this machine is configured to enforce is not running/.test(`${p.stdout}\n${p.stderr}`))
+  // fail-closed callers decode the response: a well-formed refusal from a broken pack is still a DENY.
+  if (!failClosed && /could not evaluate this call|failproofaid could not be reached|different protocol version|policy pack this machine is configured to enforce is not running/.test(`${p.stdout}\n${p.stderr}`))
     return error((p.stderr || p.stdout).trim());
   if (p.status === 2) return { verdict: "DENY", reason: p.stderr?.trim() || "hook exited 2 (blocking decision)" };
   if (p.status !== 0) return error(`engine exited ${p.status}: ${p.stderr?.trim() || "no diagnostic"}`);
