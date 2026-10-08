@@ -74,6 +74,9 @@ function readBaseline(path, target) {
   try { data = JSON.parse(readFileSync(path, "utf8")); } catch { fail("--baseline must be a readable JSON fault report"); }
   if (data?.schemaVersion !== 1 || data.kind !== "fault-injection" || !Array.isArray(data.faults)) fail("--baseline must be a schema-1 fault report");
   if (data.target !== target) fail("Baseline target must match --target");
+  // An invalid prior report would hide regressions (ERROR -> OPEN is not CLOSED -> OPEN).
+  if (data.faults.some((f) => typeof f?.id !== "string" || !["CLOSED", "OPEN", "ERROR"].includes(f.outcome) || f.outcome === "ERROR" ||
+    (f.stage === "control" && f.outcome !== "CLOSED"))) fail("--baseline must be a valid fault report without errors or unhealthy controls");
   return new Map(data.faults.map((f) => [f.id, f.outcome]));
 }
 

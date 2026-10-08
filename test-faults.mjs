@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,7 +12,7 @@ const cli = fileURLToPath(new URL("./faults.mjs", import.meta.url));
 const engine = join(work, "engine.mjs"), packs = join(work, "packs");
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const run = (args, mode = "default") => spawnSync(process.execPath, [cli, ...args], { cwd: work, encoding: "utf8", timeout: 60000,
-  env: { ...process.env, FAILPROOFAI_BIN: engine, FAILPROOFAI_PACK_DIR: packs, FAULT_MODE: mode } });
+  env: { ...process.env, FAILPROOFAI_BIN: engine, FAILPROOFAI_PACK_DIR: packs, FAULT_MODE: mode, CALLS_FILE: join(work, "calls.log"), SOURCE_MANIFEST: join(packs, "installed.json") } });
 const report = (name) => JSON.parse(readFileSync(join(work, name), "utf8"));
 const runtime = ["policy-throws", "policy-invalid-result", "policy-hangs", "policy-not-registered"];
 
@@ -24,9 +24,11 @@ try {
     entry: "artifacts/real.mjs", sha256: sha(real), policies: [{ name: "block-sudo", match: { events: ["PreToolUse"], toolNames: ["Bash"] } }] }] }));
   writeFileSync(engine, `#!${process.execPath}
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 if (process.argv[2] === '--version') { console.log('9.8.7'); process.exit(0); }
 const mode = process.env.FAULT_MODE;
+if (process.argv[2] === '--hook') appendFileSync(process.env.CALLS_FILE, [process.env.FAILPROOFAI_PACK_DIR, process.env.FAILPROOFAI_HOME, process.env.FAILPROOFAI_POLICY_LOAD_TIMEOUT_MS ?? ''].join('\\t') + '\\n');
+if (mode === 'mutate-source') appendFileSync(process.env.SOURCE_MANIFEST, ' ');
 if (mode === 'crash') process.exit(1);
 const input = JSON.parse(readFileSync(0, 'utf8'));
 const attack = input.tool_input.command === 'sudo rm /var/log/syslog';
@@ -65,6 +67,13 @@ process.exit(0);
   assert.equal(r.faults.find((f) => f.id === "manifest-absent").documentedOpen, true);
   assert.deepEqual(r.summary, { closed: 6, open: 4, documentedOpen: 1, errors: 0 });
   assert.equal(r.comparison, null);
+  // Every engine call ran in a temporary copy, never the source or the work dir; only the load-timeout fault sets the override.
+  const calls = readFileSync(join(work, "calls.log"), "utf8").trim().split("\n").map((l) => l.split("\t"));
+  const tmp = realpathSync(tmpdir());
+  assert.equal(calls.length, 26);
+  for (const [dir, home] of calls) for (const p of [dir, home]) assert.ok(p.startsWith(tmp) && !p.startsWith(work) && p !== packs, p);
+  assert.equal(calls.filter((c) => c[2] === "500").length, 2);
+  assert.deepEqual(calls.slice(0, 4).map((c) => c[2]), ["", "", "", ""]);
   assert.deepEqual([readFileSync(join(packs, "installed.json")), readFileSync(join(packs, "artifacts", "real.mjs"))], source);
 
   // Only the documented fail-open remains: pass.
@@ -83,6 +92,7 @@ process.exit(0);
   assert.equal(run(["--out", "broken.json"], "healthy-broken").status, 2);
   assert.equal(report("broken.json").faults.find((f) => f.id === "healthy").attack, "ALLOW");
   assert.equal(run(["--out", "crash.json"], "crash").status, 2);
+  for (const bad of ["broken.json", "crash.json"]) assert.equal(run(["--out", `bad-${bad}`, "--baseline", bad]).status, 2); // invalid baselines
   assert.equal(run(["--out", "first.json"]).status, 2);
   assert.equal(run([]).status, 2);
   assert.equal(run(["--out", "x.json", "--target", "block-nothing"]).status, 2);
@@ -93,6 +103,9 @@ process.exit(0);
   assert.deepEqual(report("incomplete.json").comparison.unbaselined, ["manifest-absent"]);
   writeFileSync(join(work, "other-target.json"), JSON.stringify({ ...r, target: "block-env-files" }));
   assert.equal(run(["--out", "y.json", "--baseline", "other-target.json"]).status, 2);
+  const mutated = run(["--out", "mutated.json"], "mutate-source");
+  assert.equal(mutated.status, 2);
+  assert.match(mutated.stderr, /Source pack changed/);
   console.log("Fault checks passed: fail-closed decoding, fail-open detection, baselines, invalid measurements, and source preservation.");
 } finally {
   rmSync(work, { recursive: true, force: true });
