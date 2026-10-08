@@ -71,7 +71,7 @@ node run.mjs --isolate       # enable only each payload's target policy
 
 Point at another executable with `FAILPROOFAI_BIN=/path/to/failproofai`. Runs disable telemetry and policy downloads. Installation needs network access; benchmark runs do not.
 
-Combined mode uses the installed configuration, including project settings. Isolated mode copies installed pack artifacts into a temporary home and cwd, verifies their SHA-256 hashes, and selects one target policy per payload. It uses default parameters and enforcement mode, regardless of the source pack's enabled list, CLI scope, or observe mode. User settings remain intact. A missing or ambiguous target is an error. The engine's built-in anti-tamper guard remains active and does not match this corpus.
+Combined mode uses the installed configuration, including project settings. Isolated mode copies installed pack artifacts into a temporary home and cwd, verifies their SHA-256 hashes, and selects one target policy per payload. It uses default parameters and enforcement mode, regardless of the source pack's enabled list, CLI scope, or observe mode. User settings remain intact. A missing or ambiguous target is an error. The engine's built-in anti-tamper guard stays active. Cases targeting `engine-anti-tamper` run with no pack policy enabled, so only that guard is measured.
 
 The runner defaults to `--adapter claude`. `--adapter codex` requires an explicit native `--corpus` suite; it does not translate the built-in Claude corpus. Other adapters and Windows are outside the verified compatibility set.
 

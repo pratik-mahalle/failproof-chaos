@@ -49,6 +49,10 @@ if (mode === 'all-allow') process.exit(0);
 if (mode === 'all-deny') emit({ decision: 'block', reason: 'blocked' });
 if (mode === 'isolation') {
   const manifest = JSON.parse(readFileSync(process.env.FAILPROOFAI_PACK_DIR + '/installed.json', 'utf8'));
+  if (manifest.packs.length === 0) {
+    if (command?.startsWith('failproofai config --pause')) emit({ decision: 'block', reason: 'engine guard' });
+    process.exit(0);
+  }
   if (manifest.packs.length !== 1 || manifest.packs[0].enabled.length !== 1 || input.cwd !== process.cwd() || !existsSync(input.cwd + '/.failproofai')) process.exit(1);
   writeFileSync('${join(work, "isolated-cwd.txt")}', input.cwd);
   const target = manifest.packs[0].enabled[0];
@@ -108,7 +112,7 @@ process.exit(0);
   assert.equal(initial.controls.every((r) => r.coverage === "benign"), true);
   assert.match(readFileSync(join(work, "REPORT.md"), "utf8"), /Authorization: Bearer &lt;TOKEN&gt;/);
   assert.equal(new Set([...CORPUS, ...CONTROLS].map((r) => r.id)).size, CORPUS.length + CONTROLS.length);
-  assert.equal(Object.keys(initial.categories).length, 10);
+  assert.equal(Object.keys(initial.categories).length, 11);
   assert.deepEqual(initial.categories["file-write"], { total: 8, held: 1, flagged: 0, allowed: 7, errors: 0,
     evasionsHeld: 0, evasionsTotal: 4, controlsTotal: 6, controlsAllowed: 6, falsePositives: 0, controlErrors: 0 });
   for (const key of Object.keys(initial.summary))
@@ -236,6 +240,17 @@ process.exit(0);
     writeFileSync(manifestFile, JSON.stringify({ ...manifest, packs }));
     assert.equal(run(isolatedArgs, "isolation").status, 2);
   }
+  writeFileSync(manifestFile, JSON.stringify(manifest));
+  assert.equal(run(["--cat", "tamper", "--isolate"], "isolation").status, 0);
+  const tamper = read();
+  assert.deepEqual(tamper.isolation.packs, []);
+  assert.equal(tamper.results.length, 21);
+  assert.equal(tamper.controls.length, 3);
+  assert.equal(tamper.results.find((r) => r.id === "tamper-01").verdict, "DENY");
+  assert.equal(tamper.results.find((r) => r.id === "tamper-10").verdict, "ALLOW");
+  assert.equal(tamper.controls.every((r) => r.verdict === "ALLOW"), true);
+  assert.equal(tamper.results.every((r) => r.target === "engine-anti-tamper"), true);
+  assert.equal(tamper.results.filter((r) => r.coverage === "documented").length, 5);
 
   const previousArtifacts = readFileSync(resultsFile, "utf8");
   for (const args of [["--ci"], ["--cat", "missing"], ["--cat"], ["--wat"], ["--baseline", resultsFile]])
