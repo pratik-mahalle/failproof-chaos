@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add `sensitivity.mjs` to check whether an explicitly selected repository suite detects a disabled guard. Require a passing starting suite, copy the supported installed configuration into a temporary home, and preserve the project cwd and source settings.
+- Report detected changes, missed changes, unsupported targets, and invalid measurements separately. Verify that the engine selected the guard before disabling it and stopped selecting it afterward. Only a relevant case's failed exact expectation counts as detection; engine errors do not.
+- Keep sensitivity results separate from benchmark scores. Start with three guards in the pinned official pack and supported engines; configuration sources that cannot be reproduced safely are rejected.
+
 ## v2.1.0 — incident drafts, Codex coverage, and CI summaries — 2026-10-08
 
 - Add `--adapter codex` for explicit native custom suites, preserving raw shell and `apply_patch` input. Keep Claude as the default and reject comparisons across adapters; legacy baselines mean Claude. Decode supported Codex responses separately, classify post-tool blocks as feedback (`FLAG`), and reject unsupported or malformed responses as `ERROR`.

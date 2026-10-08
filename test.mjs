@@ -552,3 +552,4 @@ await import("./test-case.mjs");
 await import("./test-adapter.mjs");
 await import("./test-context.mjs");
 await import("./test-codex.mjs");
+await import("./test-sensitivity.mjs");

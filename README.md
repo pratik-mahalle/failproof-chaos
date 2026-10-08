@@ -93,6 +93,30 @@ Native cases use the existing schema-1 fields. Shell hooks use `tool_name: "Bash
 
 Codex decoding is deliberately bounded: unsupported response shapes or decisions, including `ask`, standalone `permissionDecision: allow`, and input rewrites, produce `ERROR`. Hook-specific output requires a matching event tag. Denials require a nonempty reason; exit 2 requires that reason on stderr. These checks follow the [pinned Codex parser](https://github.com/openai/codex/blob/e974aad3b1a8f144273e882c614aefe69eaef615/codex-rs/hooks/src/engine/output_parser.rs#L443). A valid Codex `PostToolUse` block or exit 2 becomes `FLAG`, because the tool has already run. These tests measure engine responses through the selected adapter; they do not verify live Codex enforcement.
 
+## Check whether your suite catches disabled guards
+
+After your custom suite passes, check whether it detects a selected guard being disabled:
+
+```bash
+node sensitivity.mjs --corpus examples/team-cases.json \
+  --target block-env-files --out sensitivity.json
+```
+
+Repeat `--target` to select more guards; `--adapter codex` accepts native Codex suites. The output must be a new file. Existing fixtures, baselines, and reports are preserved.
+
+The check copies the supported policy configuration into a temporary home and keeps the project working directory. It requires the unchanged suite to pass, disables one selected guard at a time, verifies the engine's selection using a separate probe, then reruns the same expectations. Temporary state is removed when the check finishes.
+
+This first version requires one installed official pack in enforcement mode and local policy configuration it can reproduce. Homes with additional `config.json` or `jev.json` settings, custom or cloud policy sources, unknown policy fields, or extra `FAILPROOFAI_` overrides return an unsupported result. Project and local policy parameters remain in effect; the user-level policy configuration is copied. Config values and full payloads are omitted from the JSON report.
+
+Results are separate from ordinary benchmark scores:
+
+- **Detected:** a nonbenign case targeting that guard fails its exact expectation after the guard is disabled.
+- **Missed:** the verified change produces no relevant failed expectation. Investigate missing coverage or overlapping protection from another guard.
+- **Unsupported:** the target or configuration is outside the verified scope.
+- **Invalid:** the engine fails, the starting suite does not pass, or the change cannot be verified. Errors never count as detection.
+
+Exit codes are **0** when every selected change is detected, **1** for missed changes, and **2** for unsupported or invalid checks. The starting implementation supports `block-env-files`, `block-sudo`, and `block-read-outside-cwd` from a verified installed `FailproofAI/policies` artifact, with engines 1.0.3, 1.0.9, and 1.0.10. The real-engine checks use the pinned pack revision `06b802b63f4f`. Custom, cloud, and semantic policy sources are outside this check's scope. A missed change does not prove the repository is unsafe, and catching these changes does not establish comprehensive attack resistance.
+
 ## Test your team's workflows
 
 Turn a reported unsafe allowance or unwanted block into a reviewed JSON case. `--corpus` replaces the built-in cases with your suite and checks each expected decision:

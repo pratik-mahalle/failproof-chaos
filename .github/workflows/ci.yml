@@ -41,6 +41,8 @@ jobs:
           failproofai policies add FailproofAI/policies@06b802b63f4f --all
       - name: Verify native responses, reviewed patch gaps, and configuration changes
         run: node test-codex-engine.mjs "$RUNNER_TEMP/codex-reports"
+      - name: Verify guard sensitivity with native Codex calls
+        run: node test-sensitivity-engine.mjs "$RUNNER_TEMP/sensitivity-reports" codex
       - name: Upload Codex diagnostic reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -51,6 +53,15 @@ jobs:
             ${{ runner.temp }}/codex-reports/**/REPORT.md
             ${{ runner.temp }}/codex-reports/**/runner.log
             ${{ runner.temp }}/codex-reports/**/verification.json
+          if-no-files-found: error
+      - name: Upload Codex sensitivity reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sensitivity-codex-${{ matrix.os }}-node${{ matrix.node }}-engine1.0.10
+          path: |
+            ${{ runner.temp }}/sensitivity-reports/failproof-sensitivity-*/*.json
+            ${{ runner.temp }}/sensitivity-reports/failproof-sensitivity-*/*.log
           if-no-files-found: error
 
   check:
@@ -99,6 +110,8 @@ jobs:
           FAILPROOFAI_HOME: ${{ runner.temp }}/failproof-defaults
           GITHUB_TOKEN: ${{ github.token }}
         run: failproofai policies add FailproofAI/policies@06b802b63f4f
+      - name: Verify detected and missed guard changes
+        run: node test-sensitivity-engine.mjs "$RUNNER_TEMP/sensitivity-reports" claude
       - name: Compare all policies with the reviewed snapshot
         env:
           FAILPROOF_PROFILE: built-in / all
@@ -163,3 +176,12 @@ jobs:
           path: |
             reports/*/results.json
             reports/*/REPORT.md
+      - name: Upload sensitivity reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sensitivity-claude-${{ matrix.os }}-node${{ matrix.node }}-engine-${{ matrix.engine }}
+          path: |
+            ${{ runner.temp }}/sensitivity-reports/failproof-sensitivity-*/*.json
+            ${{ runner.temp }}/sensitivity-reports/failproof-sensitivity-*/*.log
+          if-no-files-found: error
