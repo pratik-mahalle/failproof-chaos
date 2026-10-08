@@ -1,10 +1,16 @@
 # Changelog
 
-## Unreleased
+## v2.2.0 — guard sensitivity checks — 2026-10-08
 
 - Add `sensitivity.mjs` to check whether an explicitly selected repository suite detects a disabled guard. Require a passing starting suite, copy the supported installed configuration into a temporary home, and preserve the project cwd and source settings.
 - Report detected changes, missed changes, unsupported targets, and invalid measurements separately. Verify that the engine selected the guard before disabling it and stopped selecting it afterward. Only a relevant case's failed exact expectation counts as detection; engine errors do not.
 - Keep sensitivity results separate from benchmark scores. Start with three guards in the pinned official pack and supported engines; configuration sources that cannot be reproduced safely are rejected.
+
+Support `block-env-files`, `block-sudo`, and `block-read-outside-cwd` in a verified installed official pack, with engines 1.0.3, 1.0.9, and 1.0.10. Use `--adapter codex` for native Codex suites; Claude remains the default. Output is an exclusive new JSON file. Exit 0 means all selected changes were detected, exit 1 means changes were missed, and exit 2 means an unsupported or invalid check. Existing runner behavior, schemas, expectations, and baselines remain unchanged.
+
+All ten jobs pass on [merged main](https://github.com/pratik-mahalle/failproof-chaos/actions/runs/37732580462). The implementation's ten audited CI bundles each match the ordinary runner on all nine starting cases, detect all three disabled guards, report three deliberate misses with ordinary-only cases, and reject an unsupported target. Configuration precedence and source preservation checks pass. Sensitivity reports omit raw payloads and parameter values.
+
+A missed change can reflect overlapping protection and needs investigation. These checks measure selected guard changes at the hook-decision level. Live enforcement and human time savings remain unmeasured; the six known Codex protected-patch allowances from v2.1.0 remain visible policy failures.
 
 ## v2.1.0 — incident drafts, Codex coverage, and CI summaries — 2026-10-08
 

@@ -2,7 +2,7 @@
 
 Turn an unsafe allowance or unwanted block into a reviewed repository test, then show whether a policy change fixes it while preserving ordinary work. Build on the custom suites, exact expectations, baseline comparisons, and reports shipped in v2.0.0.
 
-Updated 8 October 2026. Stages 1 and 2 are merged in [PR 2](https://github.com/pratik-mahalle/failproof-chaos/pull/2), and stage 3 is merged in [PR 3](https://github.com/pratik-mahalle/failproof-chaos/pull/3). All ten jobs pass on [the release commit](https://github.com/pratik-mahalle/failproof-chaos/actions/runs/37730340840), published as [v2.1.0](https://github.com/pratik-mahalle/failproof-chaos/releases/tag/v2.1.0). Stage 4 is implemented on `feat/guard-sensitivity`; its pull request records CI validation. The completed v2.0.0 plan is retained below as release history. Human timing and independent user feedback remain post-release validation work.
+Updated 8 October 2026. All four implementation stages are complete and merged: stages 1 and 2 in [PR 2](https://github.com/pratik-mahalle/failproof-chaos/pull/2), stage 3 in [PR 3](https://github.com/pratik-mahalle/failproof-chaos/pull/3), and stage 4 in [PR 4](https://github.com/pratik-mahalle/failproof-chaos/pull/4). All ten jobs pass on [merged main](https://github.com/pratik-mahalle/failproof-chaos/actions/runs/37732580462). Stages 1 through 3 shipped in v2.1.0; stage 4 ships in v2.2.0. The completed v2.0.0 plan is retained below as release history. Real incidents, human timing, and independent user feedback remain post-release validation work.
 
 ## Delivery order
 
@@ -13,7 +13,7 @@ Updated 8 October 2026. Stages 1 and 2 are merged in [PR 2](https://github.com/p
 | 3 | Native Codex coverage and explicit configuration comparisons | Pinned adapter tests expose tool-format differences and distinguish the tested configurations |
 | 4 | Optional checks that deliberately weaken a guard | The suite identifies selected disabled guards or reports missed coverage |
 
-Stages 1 through 3 ship together in v2.1.0. Review confirmed that schema 1, existing CLI behavior, and exit codes remain compatible. Stage 4 follows as a separate change to assess whether repository suites detect selected disabled guards.
+Stages 1 through 3 shipped together in v2.1.0. Stage 4 adds the separate sensitivity check in v2.2.0. Review confirmed that schema 1, existing CLI behavior, and exit codes remain compatible.
 
 Keep the runner dependency-free. Reuse the existing evaluator, classification, comparison, and reporting behavior. Preserve the five exact expected verdicts and exit codes 0, 1, and 2. Payloads remain data; stages 1 through 4 do not execute their commands or writes. A future live-enforcement experiment needs a separate, bounded sandbox design.
 
@@ -124,6 +124,8 @@ Package the pilot's controlled guard-disabling rehearsal when a user needs to as
 Local Node 22 checks passed on engines 1.0.3, 1.0.9, and 1.0.10 with both Claude and Codex adapters. In each of six combinations, the ordinary runner and copied configuration agree on all nine cases from a nested project cwd. All three disabled guards are detected; an ordinary-only suite misses all three; an unknown target is unsupported. Project parameters retain precedence over local and user values. Source policies, settings, fixtures, and baselines remain unchanged.
 
 Offline checks cover errors before and after weakening, nonpassing starting suites, stale or missing engine activity, overlapping guards, unrelated and benign-only failures, artifact tampering, source changes, output aliases, and temporary cleanup. The existing eight Claude and two Codex CI jobs now also run the real-engine sensitivity checks and retain their reports. No benchmark baseline or expected decision was changed.
+
+All ten jobs pass after merge. Audit of the implementation's ten CI bundles verified 30 sensitivity reports: 30 detected changes, 30 deliberate misses, 10 unsupported targets, and zero invalid measurements. All 90 full starting-case decisions match the ordinary runner. The audit also verified 120 before/after selection records and 90 configuration fingerprints, and confirmed that sensitivity reports omit raw payloads and supplied parameter values. [CI and artifact evidence](https://github.com/pratik-mahalle/failproof-chaos/pull/4).
 
 ## Value measurements and scope limits
 

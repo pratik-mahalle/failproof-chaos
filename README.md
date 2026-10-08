@@ -22,7 +22,9 @@
 
 ## What this does
 
-**v2.1.0: incident drafts, native Codex coverage, and GitHub CI summaries.** See [release notes](CHANGELOG.md).
+**v2.2.0: check whether your suite detects disabled guards.** See [release notes](CHANGELOG.md).
+
+Run `sensitivity.mjs` after your custom suite passes. It disables selected guards in a temporary configuration and reports which changes your tests detect, which they miss, and which checks are unsupported or invalid.
 
 Turn a supplied hook payload into a reviewed test draft, inspect native Codex decisions, and compare configuration fingerprints. GitHub summaries bring failed expectations and changed decisions into the workflow run.
 
