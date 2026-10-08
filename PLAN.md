@@ -2,7 +2,7 @@
 
 Turn an unsafe allowance or unwanted block into a reviewed repository test, then show whether a policy change fixes it while preserving ordinary work. Build on the custom suites, exact expectations, baseline comparisons, and reports shipped in v2.0.0.
 
-Updated 8 October 2026. Stages 1 and 2 are implemented and validated in [draft PR 2](https://github.com/pratik-mahalle/failproof-chaos/pull/2). Stage 3 is implemented and locally validated on `feat/codex-policy-coverage`; its pull request records CI status. These changes remain unreleased. Stage 4 remains planned. The completed v2.0.0 plan is retained below as release history. Human timing and independent user feedback remain post-release validation work.
+Updated 8 October 2026. Stages 1 and 2 are merged in [PR 2](https://github.com/pratik-mahalle/failproof-chaos/pull/2), and stage 3 is merged in [PR 3](https://github.com/pratik-mahalle/failproof-chaos/pull/3). All ten jobs pass on [merged main](https://github.com/pratik-mahalle/failproof-chaos/actions/runs/37729502207). These additions form v2.1.0. Stage 4 remains planned. The completed v2.0.0 plan is retained below as release history. Human timing and independent user feedback remain post-release validation work.
 
 ## Delivery order
 
@@ -13,7 +13,7 @@ Updated 8 October 2026. Stages 1 and 2 are implemented and validated in [draft P
 | 3 | Native Codex coverage and explicit configuration comparisons | Pinned adapter tests expose tool-format differences and distinguish the tested configurations |
 | 4 | Optional checks that deliberately weaken a guard | The suite identifies selected disabled guards or reports missed coverage |
 
-Target stages 1 and 2 for v2.1.0. Stage 1 can ship separately as an additive release if the case helper needs longer. Stage 3 is the next release candidate after its adapter contract is verified. Assign its version after reviewing schema compatibility; a breaking change needs a major version. Stage 4 follows a concrete suite-coverage need. Release names are targets, not published commitments.
+Stages 1 through 3 ship together in v2.1.0. Review confirmed that schema 1, existing CLI behavior, and exit codes remain compatible. Stage 4 follows as a separate change to assess whether repository suites detect selected disabled guards.
 
 Keep the runner dependency-free. Reuse the existing evaluator, classification, comparison, and reporting behavior. Preserve the five exact expected verdicts and exit codes 0, 1, and 2. Payloads remain data; stages 1 through 4 do not execute their commands or writes. A future live-enforcement experiment needs a separate, bounded sandbox design.
 
@@ -100,7 +100,7 @@ Local real-engine checks on 1.0.3, 1.0.9, and 1.0.10 with pack `06b802b63f4f` re
 
 `test-codex-engine.mjs` also uses two explicit temporary homes and the same project cwd and suite to compare `block-read-outside-cwd.allowPaths`. The outside read changes `DENY` → `ALLOW`, creating one failed expectation and one regression; the ordinary repository read stays `ALLOW`. Configuration fingerprints match the supplied files, and source settings remain unchanged. This proves the tested parameter's effect; the general context record identifies sources only.
 
-All offline checks pass. The six local Claude measurements (engines 1.0.3/1.0.9 × all/default/isolated) match every reviewed verdict and category score. The existing eight CI jobs remain intact; two focused Codex jobs add engine 1.0.10 on Ubuntu/Node 22 and macOS/Node 24. Their diagnostic check asserts the reviewed failures explicitly and keeps the failing policy reports in artifacts. The stage 3 pull request records matrix completion and artifact review.
+All offline checks pass. The six local Claude measurements (engines 1.0.3/1.0.9 × all/default/isolated) match every reviewed verdict and category score. The existing eight CI jobs remain intact; two focused Codex jobs add engine 1.0.10 on Ubuntu/Node 22 and macOS/Node 24. Their diagnostic check asserts the reviewed failures explicitly and keeps the failing policy reports in artifacts. All ten jobs pass after merge; the stage 3 pull request records artifact review.
 
 Schema 1, default Claude behavior, and existing exit codes remain compatible. `adapter`, `runContext`, and `comparison.contextChanged` are additive. No schema migration or major-version requirement follows from this change. Release numbering and publication remain separate from implementation.
 

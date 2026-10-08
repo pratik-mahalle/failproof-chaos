@@ -22,7 +22,9 @@
 
 ## What this does
 
-**v2.0.0: custom workflow regression suites.** See [release notes](CHANGELOG.md).
+**v2.1.0: incident drafts, native Codex coverage, and GitHub CI summaries.** See [release notes](CHANGELOG.md).
+
+Turn a supplied hook payload into a reviewed test draft, inspect native Codex decisions, and compare configuration fingerprints. GitHub summaries bring failed expectations and changed decisions into the workflow run.
 
 Test your team's tool calls with `--corpus` and exact expected decisions. A saved baseline cannot silence an unsafe allowance or unwanted block that fails an expectation. Run the suite in CI when policies or workflows change.
 

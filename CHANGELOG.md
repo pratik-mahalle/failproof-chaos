@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v2.1.0 — incident drafts, Codex coverage, and CI summaries — 2026-10-08
 
 - Add `--adapter codex` for explicit native custom suites, preserving raw shell and `apply_patch` input. Keep Claude as the default and reject comparisons across adapters; legacy baselines mean Claude. Decode supported Codex responses separately, classify post-tool blocks as feedback (`FLAG`), and reject unsupported or malformed responses as `ERROR`.
 - Add source configuration fingerprints, declared pack selections, verified artifact hashes, and working-directory context to schema-1 results and reports. Baselines can show source-context differences without treating hashes as proof of applied settings or changing the verdict gate.
@@ -11,6 +11,8 @@
 - Give custom-suite validation errors a case and field context. Document reviewed incident/control pairs, synthetic unsafe-allowance and unwanted-block rehearsals, and baseline-based upgrade reviews.
 
 These additions preserve the runner CLI, exit codes, schema-1 field meanings, and reviewed built-in cases. The helper does not capture sessions, execute payloads, infer expected behavior, or redact input. Human time savings and real production incident capture remain unmeasured.
+
+Both implementation PRs are merged. All ten jobs pass on [the merged-main validation](https://github.com/pratik-mahalle/failproof-chaos/actions/runs/37729502207): the eight Claude compatibility jobs and two focused Codex jobs. The six desired Codex patch refusals remain visible policy failures; passing diagnostic CI does not mean those patches are blocked.
 
 ## v2.0.0 — custom workflow regression suites — 2026-10-06
 
