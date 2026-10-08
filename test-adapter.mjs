@@ -99,3 +99,12 @@ assert.equal(classify(pre, processResult({ hookSpecificOutput: { permissionDecis
 assert.equal(classify(post, processResult({ decision: "block", reason: "blocked" }), "claude").verdict, "DENY");
 assert.equal(classify(post, processResult(undefined, { status: 2 })).verdict, "DENY");
 console.log("Adapter response checks passed");
+
+// Fault injection asks whether a broken pack still refuses; ordinary runs keep ERROR.
+const failClosed = { status: 0, stderr: "", stdout: JSON.stringify({ hookSpecificOutput: { hookEventName: pre,
+  permissionDecision: "deny", permissionDecisionReason: "Blocked because a policy pack this machine is configured to enforce is not running" } }) };
+assert.equal(classify(pre, failClosed).verdict, "ERROR");
+assert.equal(classify(pre, failClosed, "claude", { failClosed: true }).verdict, "DENY");
+assert.equal(classify(pre, { status: 2, stdout: "", stderr: "failproofai could not evaluate this call" }, "claude", { failClosed: true }).verdict, "DENY");
+assert.equal(classify(pre, { status: 0, stdout: "", stderr: "failproofaid could not be reached" }, "claude", { failClosed: true }).verdict, "ALLOW");
+assert.equal(classify(pre, { status: 1, stdout: "", stderr: "failproofaid could not be reached" }, "claude", { failClosed: true }).verdict, "ERROR");

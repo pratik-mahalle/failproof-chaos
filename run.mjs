@@ -66,12 +66,14 @@ function probe(args) {
   return p.stdout.trim().replace(/\x1b\[[0-9;]*m/g, "");
 }
 
+// Built in to the engine, not a pack policy; isolation measures it with no pack enabled.
+const ENGINE_GUARD = "engine-anti-tamper";
 function isolate(cases, adapter) {
   const root = realpathSync(env.FAILPROOFAI_PACK_DIR || join(env.FAILPROOFAI_HOME || join(homedir(), ".failproofai"), "policies", "packs"));
   const manifest = JSON.parse(readFileSync(join(root, "installed.json"), "utf8"));
   if (manifest?.schemaVersion !== 1 || !Array.isArray(manifest.packs)) throw new Error("Unsupported installed policy manifest");
   const selected = new Map();
-  for (const target of new Set(cases.map((c) => c.target))) {
+  for (const target of new Set(cases.map((c) => c.target).filter((target) => target !== ENGINE_GUARD))) {
     const matches = manifest.packs.filter((p) => p.policies?.some((policy) => policy.name === target));
     if (matches.length !== 1) throw new Error(`Isolation requires exactly one installed pack for ${target}, found ${matches.length}`);
     selected.set(target, matches[0]);
@@ -97,6 +99,7 @@ function isolate(cases, adapter) {
     context,
     packs: packs.map(({ id, version, sha256, commit, entry }) => ({ id, version, sha256, entry, ...(commit ? { commit } : {}) })),
     select(c) {
+      if (c.target === ENGINE_GUARD) return writeFileSync(join(packsDir, "installed.json"), JSON.stringify({ schemaVersion: 1, packs: [] }));
       const p = packs[sourcePacks.indexOf(selected.get(c.target))];
       writeFileSync(join(packsDir, "installed.json"), JSON.stringify({ schemaVersion: 1, packs: [{ ...p, enabled: [c.target] }] }));
     },
@@ -371,7 +374,7 @@ function main() {
   md.push("\n## Policy configuration\n", "Source configuration captured from `failproofai policies` before isolation. This existing listing may contain parameter values. Agent wiring status does not affect these direct hook calls.\n",
     "```text", policies.replace(/```/g, "'''"), "```\n",
     "## Method\n", "This checks per-call hook decisions, not live agent behavior, daemon latency, or actual secret redaction. " +
-    (options.isolate ? "Each payload enables only its target pack policy, with default parameters, in a temporary home and cwd. The engine's built-in anti-tamper guard remains active; it does not match these payloads.\n" :
+    (options.isolate ? "Each payload enables only its target pack policy, with default parameters, in a temporary home and cwd. The engine's built-in anti-tamper guard stays active; `engine-anti-tamper` cases run with no pack policy enabled, so only that guard is measured.\n" :
       "Policy targets describe test intent; another enabled policy may catch the payload.\n") +
     "Environment-dependent stop gates are outside this corpus.\n");
   writeFileSync("results.json", JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), engine,

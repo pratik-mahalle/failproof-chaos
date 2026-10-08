@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "kind": "fault-injection",
+  "generatedAt": "2026-10-08T06:35:27.200Z",
+  "engine": {
+    "binary": "/var/folders/pg/t5fcwvkn6b50r30015fqdy280000gn/T/tmp.KETWFx0uGY/1.0.9/node_modules/.bin/failproofai",
+    "version": "1.0.9"
+  },
+  "target": "block-sudo",
+  "attack": "sudo-01",
+  "control": "ok-sudo-01",
+  "faults": [
+    {
+      "id": "healthy",
+      "stage": "control",
+      "documentedOpen": false,
+      "note": "unmodified copy of the installed pack",
+      "attack": "DENY",
+      "control": "ALLOW",
+      "outcome": "CLOSED",
+      "reason": "Blocked Bash by failproofai because: sudo commands are blocked, as per the policy configured by the user"
+    },
+    {
+      "id": "healthy-synthetic",
+      "stage": "control",
+      "documentedOpen": false,
+      "note": "re-signed probe policy that denies the attack",
+      "attack": "DENY",
+      "control": "ALLOW",
+      "outcome": "CLOSED",
+      "reason": "Blocked Bash by failproofai because: fault probe, as per the policy configured by the user"
+    },
+    {
+      "id": "manifest-unreadable",
+      "stage": "load",
+      "documentedOpen": false,
+      "note": "installed.json is not JSON",
+      "attack": "DENY",
+      "control": "DENY",
+      "outcome": "CLOSED",
+      "reason": "Blocked Bash by failproofai because: Blocked because a policy pack this machine is configured to enforce is not running — (unnamed pack) (unreadable pack manifest: Expected property name or '}' in JSON at position 1 (line 1 column 2)). Enforcement you were told you had is missing, so this is refused"
+    },
+    {
+      "id": "manifest-invalid",
+      "stage": "load",
+      "documentedOpen": false,
+      "note": "installed.json is an empty object",
+      "attack": "DENY",
+      "control": "DENY",
+      "outcome": "CLOSED",
+      "reason": "Blocked Bash by failproofai because: Blocked because a policy pack this machine is configured to enforce is not running — (unnamed pack) (unsupported pack manifest schema undefined (supported: 1)). Enforcement you were told you had is missing, so this is refused rather than allowed silently. A human"
+    },
+    {
+      "id": "artifact-hash-mismatch",
+      "stage": "load",
+      "documentedOpen": false,
+      "note": "artifact bytes differ from the declared SHA-256",
+      "attack": "DENY",
+      "control": "DENY",
+      "outcome": "CLOSED",
+      "reason": "Blocked Bash by failproofai because: Blocked because a policy pack this machine is configured to enforce is not running — FailproofAI/policies (pack FailproofAI/policies failed integrity verification: expected 3f71b47e9162755cbdb39d4dabfd00f5dd80b81bae5973c3af90ae81ab2e1167, got 5b91634422a4720ed8d3"
+    },
+    {
+      "id": "artifact-missing",
+      "stage": "load",
+      "documentedOpen": false,
+      "note": "declared artifact is deleted",
+      "attack": "DENY",
+      "control": "DENY",
+      "outcome": "CLOSED",
+      "reason": "Blocked Bash by failproofai because: Blocked because a policy pack this machine is configured to enforce is not running — FailproofAI/policies (ENOENT: no such file or directory, lstat '/private/var/folders/pg/t5fcwvkn6b50r30015fqdy280000gn/T/failproof-fault-7B6msK/.failproofai/policies/packs/artifa"
+    },
+    {
+      "id": "artifact-load-throws",
+      "stage": "load",
+      "documentedOpen": false,
+      "note": "re-signed module throws on import",
+      "attack": "DENY",
+      "control": "DENY",
+      "outcome": "CLOSED",
+      "reason": "Blocked Bash by failproofai because: Blocked because a policy pack this machine is configured to enforce is not running — FailproofAI/policies@06b802b63f4f (artifact failed to load: fault probe: load failure): block-sudo. Enforcement you were told you had is missing, so this is refused rather than a"
+    },
+    {
+      "id": "artifact-load-timeout",
+      "stage": "load",
+      "documentedOpen": false,
+      "note": "re-signed module loads for 3 s; FAILPROOFAI_POLICY_LOAD_TIMEOUT_MS=500 (CLOSED if the engine ignores the override)",
+      "attack": "ALLOW",
+      "control": "ALLOW",
+      "outcome": "OPEN",
+      "reason": "no decision emitted"
+    },
+    {
+      "id": "policy-throws",
+      "stage": "runtime",
+      "documentedOpen": false,
+      "note": "target policy throws",
+      "attack": "ALLOW",
+      "control": "ALLOW",
+      "outcome": "OPEN",
+      "reason": "no decision emitted"
+    },
+    {
+      "id": "policy-invalid-result",
+      "stage": "runtime",
+      "documentedOpen": false,
+      "note": "target policy returns a non-decision",
+      "attack": "ALLOW",
+      "control": "ALLOW",
+      "outcome": "OPEN",
+      "reason": "no decision emitted"
+    },
+    {
+      "id": "policy-hangs",
+      "stage": "runtime",
+      "documentedOpen": false,
+      "note": "target policy never settles (engine waits about 10 s)",
+      "attack": "ALLOW",
+      "control": "ALLOW",
+      "outcome": "OPEN",
+      "reason": "no decision emitted"
+    },
+    {
+      "id": "policy-not-registered",
+      "stage": "runtime",
+      "documentedOpen": false,
+      "note": "pack declares the target but registers nothing",
+      "attack": "ALLOW",
+      "control": "ALLOW",
+      "outcome": "OPEN",
+      "reason": "no decision emitted"
+    },
+    {
+      "id": "manifest-absent",
+      "stage": "load",
+      "documentedOpen": true,
+      "note": "upstream treats a missing manifest as a fresh machine",
+      "attack": "ALLOW",
+      "control": "ALLOW",
+      "outcome": "OPEN",
+      "reason": "no decision emitted"
+    }
+  ],
+  "summary": {
+    "closed": 5,
+    "open": 5,
+    "documentedOpen": 1,
+    "errors": 0
+  },
+  "comparison": null
+}

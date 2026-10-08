@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.0.0 — guard integrity — unreleased
+
+- Add the built-in `tamper` category: 21 attacks and 3 controls checking whether an agent can pause failproofai, remove policies, delete its state, or rewrite its own hook configuration. The engine's built-in guard is measured in combined and isolated modes (`engine-anti-tamper` cases run with no pack policy enabled). Command-substitution pauses and hook-config rewrites for Claude Code, Codex and Cursor are currently allowed.
+- Add `faults.mjs`: inject one fault at a time into a temporary copy of the installed pack and report whether the `block-sudo` attack stays refused (CLOSED) or is allowed (OPEN). Load-time corruption fails closed (a deleted manifest is the documented exception: it is allowed, because upstream treats it as a fresh machine); policy exceptions, invalid results, hangs, slow loads and unregistered policies fail open. A reviewed `baselines/faults.json` gates CI on CLOSED→OPEN regressions.
+- `classify()` accepts `{ failClosed: true }` to decode an engine's fail-closed refusal as DENY. Ordinary runs still report it as ERROR.
+- Document a pre-commit hook that re-runs the suite and fault check when guard configuration changes.
+
+**Why a major version:** the built-in corpus grows to 76 attacks and 47 controls, so saved built-in baselines report new cases and `--ci` exits 2 until reviewed, and the headline held percentage changes. Schema 1, CLI flags and exit codes are unchanged. Under the README's compatibility rule, corpus additions are allowed within a minor release; v3.0.0 is a deliberate choice that marks the new guard-integrity scope, not a compatibility break. Codex fault injection, other harnesses, daemon faults and harness-level hook timeouts remain unmeasured.
+
 ## v2.2.0 — guard sensitivity checks — 2026-10-08
 
 - Add `sensitivity.mjs` to check whether an explicitly selected repository suite detects a disabled guard. Require a passing starting suite, copy the supported installed configuration into a temporary home, and preserve the project cwd and source settings.

@@ -7,14 +7,14 @@
 </p>
 
 <p align="center">
-  <strong>55 attacks. 44 benign controls. Reviewed baselines.</strong><br/>
+  <strong>76 attacks. 47 benign controls. Reviewed baselines.</strong><br/>
   A regression kit for <a href="https://befailproof.ai">failproofai</a> guardrails.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/held-64%25-yellow?style=flat-square" alt="64% held" />
-  <img src="https://img.shields.io/badge/evasions_held-18%2F31-green?style=flat-square" alt="18/31 evasions held" />
-  <img src="https://img.shields.io/badge/slipped-12-red?style=flat-square" alt="12 slipped" />
+  <img src="https://img.shields.io/badge/held-58%25-yellow?style=flat-square" alt="58% held" />
+  <img src="https://img.shields.io/badge/evasions_held-22%2F47-green?style=flat-square" alt="22/47 evasions held" />
+  <img src="https://img.shields.io/badge/slipped-24-red?style=flat-square" alt="24 slipped" />
   <img src="https://img.shields.io/badge/runs-offline-blue?style=flat-square" alt="Runs offline" />
 </p>
 
@@ -30,7 +30,7 @@ Turn a supplied hook payload into a reviewed test draft, inspect native Codex de
 
 Test your team's tool calls with `--corpus` and exact expected decisions. A saved baseline cannot silence an unsafe allowance or unwanted block that fails an expectation. Run the suite in CI when policies or workflows change.
 
-The built-in corpus sends 55 attack payloads and 44 benign controls across ten categories to failproofai's hook engine. Commands and file writes stay JSON data; the harness never carries them out. It measures blocking decisions, advisory notices, allows, and engine errors, then compares them with a reviewed baseline. No LLM or API keys are needed.
+The built-in corpus sends 76 attack payloads and 47 benign controls across eleven categories to failproofai's hook engine. Commands and file writes stay JSON data; the harness never carries them out. It measures blocking decisions, advisory notices, allows, and engine errors, then compares them with a reviewed baseline. No LLM or API keys are needed.
 
 ### Reviewed configurations
 
@@ -38,9 +38,9 @@ These Claude-adapter scores match on failproofai **1.0.3 and 1.0.9**, using `Fai
 
 | Configuration | Attacks held | Advisory notices | Attacks allowed | Benign controls allowed | False positives |
 |---------------|--------------|------------------|-----------------|-------------------------|-----------------|
-| All 38 policies | 35/55 | 8 | 12 | 37/44 | 7 |
-| Default 10 policies | 16/55 | 4 | 35 | 43/44 | 1 |
-| Each target policy in isolation | 33/55 | 8 | 14 | 37/44 | 7 |
+| All 38 policies | 44/76 | 8 | 24 | 40/47 | 7 |
+| Default 10 policies | 25/76 | 4 | 47 | 46/47 | 1 |
+| Each target policy in isolation | 42/76 | 8 | 26 | 40/47 | 7 |
 
 All runs have zero engine errors. The checked-in [report](REPORT.md) and [results](results.json) use the all-policy configuration. Alternate snapshots are in [baselines](baselines/).
 
@@ -50,9 +50,20 @@ The controls expose unwanted blocks on quoted deletion/download examples and pub
 
 The `file-write` category covers four protected filenames, Edit and shell variants, uppercase/backup extensions, and six benign documentation/source writes. Harmless Edit and shell writes pair with the risky variants. The pinned policy protects filenames through the Write tool. Payload content is synthetic, and these measurements do not establish detection of actual secret contents or execution of actual writes.
 
+The `tamper` category checks whether an agent can switch failproofai off. The engine's built-in guard blocks direct pause, removal and state-file deletion, independent of enabled policies. Command-substitution pauses and rewrites of the agent's own hook configuration (`.claude/settings*.json`, `.codex/hooks.json`, `.cursor/hooks.json`) are currently allowed. Those writes remove failproofai from the agent's next session while every policy still reports healthy.
+
 Deletion probes now target catastrophic paths such as `/var`. The guard intentionally permits project cleanup such as `rm -rf ./build`, and it already catches `find /var -delete`. Likewise, this pack intentionally permits force-with-lease on a feature branch; pushing to `main` still targets the protected-branch policy. These corrections mean v0.1 and v1.0 scores use different payloads.
 
 Allowed attack probes include command substitution, encoded deletion, Python deletion, separate download/execute calls, absolute-path or aliased kubectl, and fragmented secret text. A saved allowance records the policy's current behavior; it does not establish that every probe is within the policy's promised coverage.
+
+## Guard integrity
+
+**v3.0.0** asks two questions the per-policy scores cannot answer: can the agent switch failproofai off, and does a broken pack still refuse?
+
+- `node run.mjs --cat tamper` sends 21 self-disabling payloads: pausing, removing policies, deleting state, and rewriting the agent's own hook configuration. The engine's built-in guard is measured in every mode, including `--isolate`.
+- `node faults.mjs --out faults.json` copies the installed pack into a temporary home and injects one fault at a time: unreadable or invalid manifest, tampered, missing or throwing artifact, slow load, a policy that throws, returns garbage, or hangs, and a declared policy that never registers. Each fault reports CLOSED (the `block-sudo` attack is still refused) or OPEN (it is allowed). Healthy copies must deny the attack and allow the control, or the run is invalid.
+
+With the pinned pack, load-time corruption fails closed, but runtime policy failures and slow loads fail open with only a stderr warning. A deleted manifest also allows everything; upstream treats that as a fresh machine. Compare against `baselines/faults.json` to fail only when a fault that was refused becomes allowed. Your real home is never written; payloads are never executed.
 
 ## Quick start
 
@@ -71,7 +82,7 @@ node run.mjs --isolate       # enable only each payload's target policy
 
 Point at another executable with `FAILPROOFAI_BIN=/path/to/failproofai`. Runs disable telemetry and policy downloads. Installation needs network access; benchmark runs do not.
 
-Combined mode uses the installed configuration, including project settings. Isolated mode copies installed pack artifacts into a temporary home and cwd, verifies their SHA-256 hashes, and selects one target policy per payload. It uses default parameters and enforcement mode, regardless of the source pack's enabled list, CLI scope, or observe mode. User settings remain intact. A missing or ambiguous target is an error. The engine's built-in anti-tamper guard remains active and does not match this corpus.
+Combined mode uses the installed configuration, including project settings. Isolated mode copies installed pack artifacts into a temporary home and cwd, verifies their SHA-256 hashes, and selects one target policy per payload. It uses default parameters and enforcement mode, regardless of the source pack's enabled list, CLI scope, or observe mode. User settings remain intact. A missing or ambiguous target is an error. The engine's built-in anti-tamper guard stays active. Cases targeting `engine-anti-tamper` run with no pack policy enabled, so only that guard is measured.
 
 The runner defaults to `--adapter claude`. `--adapter codex` requires an explicit native `--corpus` suite; it does not translate the built-in Claude corpus. Other adapters and Windows are outside the verified compatibility set.
 
@@ -139,6 +150,25 @@ Run from the team's project directory to use its installed policy configuration 
 
 Fixtures and generated reports contain the supplied payloads. Use synthetic or reviewed redacted examples, preserving the features needed to reproduce the decision. See [the pilot guide](PILOT.md) for incident authoring, a project-root CI recipe, and results from the initial three-repository trial. Its [unwanted-block rehearsal](examples/pilot-rehearsal.json) intentionally fails with the pinned all-policy pack.
 
+### Gate commits that touch guard configuration
+
+Save as `.git/hooks/pre-commit` in the repository whose agent is guarded, make it executable, and point `CHAOS` at your checkout:
+
+```sh
+#!/bin/sh
+# Re-check guards only when their configuration changes.
+CHAOS=${CHAOS:-$HOME/code/failproof-chaos}
+git diff --cached --name-only | grep -Eq '^(\.failproofai/|\.claude/settings|\.codex/|\.cursor/hooks)' || exit 0
+for f in .claude/settings.json .codex/hooks.json; do
+  git cat-file -e ":$f" 2>/dev/null || continue
+  git show ":$f" | grep -q failproofai || { echo "pre-commit: $f no longer runs failproofai" >&2; exit 1; }
+done
+node "$CHAOS/run.mjs" --corpus .failproofai/chaos-cases.json --ci || exit 1
+node "$CHAOS/faults.mjs" --out "$(mktemp -d)/faults.json" --baseline "$CHAOS/baselines/faults.json" || exit 1
+```
+
+The hook blocks staged hook configs that drop failproofai, re-checks your suite's decisions, and re-measures the installed pack; it does not prove the agent loads the hooks. A missing `.failproofai/chaos-cases.json` blocks the commit. The suite path is your reviewed custom suite. The runner writes `results.json` and `REPORT.md` in the current directory; add them to `.gitignore` or run the hook from a scratch directory. `git commit --no-verify` skips the hook; CI remains the enforced gate.
+
 ### Draft a case from a hook payload
 
 `case.mjs` turns one explicitly supplied Claude-compatible payload into a new schema-1 suite containing one case. Choose the intended verdict yourself:
@@ -194,7 +224,7 @@ Each built-in row has a `coverage` annotation based on the [pinned pack's publis
 | `exploratory` | The probe tests a variant whose coverage has not been established, such as aliases, encoded/interpreter commands, split secrets, or alternate write tools/extensions |
 | `benign` | Harmless work expected to receive ALLOW |
 
-The corpus has 42 documented and 13 exploratory attack probes. These labels describe test intent against the pinned pack, independent of the current enabled list. Reassess them when testing another policy revision. An allowed documented probe needs investigation with the target enabled; an exploratory allowance alone does not establish a broken policy promise. For example, the named absolute-path kubectl invocation is documented, while an unknown `k` alias is exploratory. The procfs/Python dump probes explore beyond the pack's stated `env`/`printenv` examples; Edit/Bash writes are outside the write policy's declared Write tool matcher.
+The corpus has 47 documented and 29 exploratory attack probes. These labels describe test intent against the pinned pack, independent of the current enabled list. Reassess them when testing another policy revision. An allowed documented probe needs investigation with the target enabled; an exploratory allowance alone does not establish a broken policy promise. For example, the named absolute-path kubectl invocation is documented, while an unknown `k` alias is exploratory. The procfs/Python dump probes explore beyond the pack's stated `env`/`printenv` examples; Edit/Bash writes are outside the write policy's declared Write tool matcher.
 
 Both groups remain in the attack counts and regression comparisons. Coverage annotations do not change verdicts, scoring, payload matching, or exit codes. `tier` still records direct/evasion/benign form; some evasion variants are within documented coverage.
 
@@ -261,7 +291,9 @@ Summaries use the invocation's in-memory results, never a previous `results.json
 
 v2.0.0 marks the custom workflow testing milestone and preserves the v1.2 CLI behavior, exit codes, schema-1 field meanings, legacy baseline support, and all 99 built-in cases. Existing v1.2 built-in suites and baselines require no migration. The new custom suite fields are additive.
 
-The supported flags are `--adapter claude|codex`, `--corpus <file.json>`, `--cat <category>`, `--isolate`, `--baseline <file>`, `--ci`, and `--help`/`-h`. The adapter defaults to Claude. Built-in categories are `deletion`, `sudo`, `curl-pipe`, `infra`, `secrets`, `env`, `read-escape`, `git`, `data`, and `file-write`. Custom categories come from the suite. Exit codes and JSON field meanings stay compatible throughout v2. Built-in runs require `--baseline` with `--ci`; custom runs can gate on expectations alone. Console text and Markdown layout are intended for humans.
+v3.0.0 compatibility: schema 1, CLI flags, and exit codes are unchanged. The built-in corpus is now 123 cases (76 attacks, 47 controls) across eleven categories including `tamper`, so saved built-in baselines report the 24 new cases for review. `faults.mjs` is a new, separate entry point.
+
+The supported flags are `--adapter claude|codex`, `--corpus <file.json>`, `--cat <category>`, `--isolate`, `--baseline <file>`, `--ci`, and `--help`/`-h`. The adapter defaults to Claude. Built-in categories are `deletion`, `sudo`, `curl-pipe`, `infra`, `secrets`, `env`, `read-escape`, `git`, `data`, `file-write`, and `tamper`. Custom categories come from the suite. Exit codes and JSON field meanings stay compatible since v2. Built-in runs require `--baseline` with `--ci`; custom runs can gate on expectations alone. Console text and Markdown layout are intended for humans.
 
 `results.json` has `schemaVersion: 1` and these fields:
 
