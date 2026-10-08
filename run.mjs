@@ -2,7 +2,7 @@
 // Only send payloads to the hook engine; never execute their commands.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, readFileSync, realpathSync, writeFileSync, existsSync, statSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { appendFileSync, readFileSync, realpathSync, writeFileSync, existsSync, statSync, lstatSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { resolve, join, dirname, basename, sep } from "node:path";
 import { isDeepStrictEqual, parseArgs } from "node:util";
@@ -129,7 +129,7 @@ function appendJobSummary() {
   const path = process.env.GITHUB_STEP_SUMMARY;
   if (!path || !job) return;
   // A misconfigured summary path must never append to an input or a report.
-  const canonical = (file) => existsSync(file) ? realpathSync(file) :
+  const canonical = (file) => existsSync(file) || lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink() ? realpathSync(file) :
     existsSync(dirname(resolve(file))) ? join(realpathSync(dirname(resolve(file))), basename(file)) : resolve(file);
   const output = canonical(path);
   // Include input paths even when argument parsing failed before options existed.

@@ -58,6 +58,23 @@ process.stdout.write(process.env.RESPONSE);
   assert.equal(noSuite.status, 2);
   assert.match(noSuite.stderr, /requires --corpus/);
   assert.equal(run(["--adapter", "codex"], '{"hookSpecificOutput":{"permissionDecision":"ask"}}').status, 2);
+  writeFileSync(suite, JSON.stringify({ schemaVersion: 1, cases: [{ ...native, tier: "direct", expect: "DENY" }] }));
+  const validDenial = { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "blocked" } };
+  assert.equal(run(["--adapter", "codex", "--ci"], JSON.stringify(validDenial)).status, 0);
+  for (const output of [
+    { hookSpecificOutput: { permissionDecision: "deny", permissionDecisionReason: "blocked" } },
+    { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny" } },
+    { hookSpecificOutput: { ...validDenial.hookSpecificOutput, permissionDecisionReason: "  " } },
+  ]) {
+    writeFileSync(join(work, "summary.md"), "");
+    assert.equal(run(["--adapter", "codex", "--ci"], JSON.stringify(output)).status, 2);
+    assert.equal(result().summary.held, 0);
+    assert.equal(result().summary.errors, 1);
+    assert.equal(result().expectations.mismatches[0].actual, "ERROR");
+    const summary = readFileSync(join(work, "summary.md"), "utf8");
+    assert.match(summary, /INVALID RUN OR COMPARISON/);
+    assert.doesNotMatch(summary, /PASS —/);
+  }
   writeFileSync(suite, JSON.stringify({ schemaVersion: 1, cases: [{ ...native, tier: "direct", event: "PostToolUse",
     expect: "FLAG", tool_response: false }] }));
   assert.equal(run(["--adapter", "codex", "--ci"], '{"decision":"block","reason":"feedback"}').status, 0);

@@ -33,11 +33,15 @@ export function classify(event, p, adapter = "claude") {
 
 // Bounded contract: https://learn.chatgpt.com/docs/hooks (2026-10-08).
 // Reject unsupported output so an inert response cannot count as protection.
+// Parser details: openai/codex@e974aad3b1a8f144273e882c614aefe69eaef615,
+// codex-rs/hooks/src/{schema.rs,engine/output_parser.rs,events/pre_tool_use.rs,events/post_tool_use.rs}.
 function classifyCodex(event, p) {
   const error = (reason) => ({ verdict: "ERROR", reason });
   const post = event === "PostToolUse";
   const feedback = (reason) => ({ verdict: "FLAG", reason: `Post-tool feedback (tool already ran): ${reason}` });
   if (!["PreToolUse", "PostToolUse"].includes(event)) return error(`unsupported Codex event: ${event}`);
+  if (!p.error && !p.signal && p.status === 2 && !p.stderr?.trim())
+    return error("Codex hook exited 2 without a nonempty reason on stderr");
   if (p.error || p.signal || p.status !== 0 ||
       /could not evaluate this call|failproofaid could not be reached|different protocol version|policy pack this machine is configured to enforce is not running/.test(`${p.stdout}\n${p.stderr}`)) {
     const result = classify(event, p);
@@ -57,23 +61,31 @@ function classifyCodex(event, p) {
   const hookKeys = ["hookEventName", "additionalContext", ...(!post ? ["permissionDecision", "permissionDecisionReason"] : [])];
   const extraHook = Object.keys(hso).find((key) => !hookKeys.includes(key));
   if (extraHook !== undefined) return error(`unsupported Codex hookSpecificOutput field: ${extraHook}`);
-  if (hso.hookEventName !== undefined && hso.hookEventName !== event) return error("Codex hookEventName does not match the case event");
+  if (out.hookSpecificOutput !== undefined && hso.hookEventName !== event)
+    return error("Codex hookSpecificOutput requires hookEventName matching the case event");
   for (const [key, value] of Object.entries({ reason: out.reason, systemMessage: out.systemMessage,
     stopReason: out.stopReason, additionalContext: hso.additionalContext, permissionDecisionReason: hso.permissionDecisionReason }))
     if (value !== undefined && typeof value !== "string") return error(`invalid Codex ${key}`);
   if (out.continue !== undefined && typeof out.continue !== "boolean") return error("invalid Codex continue");
   if (out.decision !== undefined && out.decision !== "block") return error(`unsupported Codex decision: ${String(out.decision)}`);
-  if (hso.permissionDecision !== undefined && !["allow", "deny"].includes(hso.permissionDecision))
+  // Codex accepts permissionDecision:allow only with updatedInput, which this
+  // decision-only runner does not measure and rejects above.
+  if (hso.permissionDecision !== undefined && hso.permissionDecision !== "deny")
     return error(`unsupported Codex permissionDecision: ${String(hso.permissionDecision)}`);
-  if (out.decision === "block" && hso.permissionDecision === "allow") return error("conflicting Codex decisions");
+  if (hso.permissionDecision === "deny" && !hso.permissionDecisionReason?.trim())
+    return error("Codex deny requires a nonempty permissionDecisionReason");
+  if (hso.permissionDecisionReason !== undefined && hso.permissionDecision === undefined)
+    return error("Codex permissionDecisionReason requires permissionDecision");
+  if (out.reason !== undefined && out.decision === undefined &&
+      (post ? out.continue !== false : hso.permissionDecision === undefined))
+    return error("Codex reason requires a decision");
   if (out.decision === "block" && !out.reason?.trim()) return error("Codex block requires a nonempty reason");
   const context = hso.additionalContext?.trim();
   if (post && (out.decision === "block" || out.continue === false))
     return feedback(out.reason || out.stopReason || context || "hook stopped normal tool-result processing");
   if (hso.permissionDecision === "deny" || out.decision === "block")
-    return { verdict: "DENY", reason: hso.permissionDecisionReason ?? out.reason ?? "hook denied the tool call" };
+    return { verdict: "DENY", reason: hso.permissionDecisionReason ?? out.reason };
   if (context) return { verdict: post ? "FLAG" : "INSTRUCT", reason: context };
-  if (hso.permissionDecision === "allow" || out.continue === true)
-    return { verdict: "ALLOW", reason: hso.permissionDecisionReason || "permissive decision" };
+  if (out.continue === true) return { verdict: "ALLOW", reason: "permissive decision" };
   return error("response contains no recognized Codex decision or context");
 }

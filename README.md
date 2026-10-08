@@ -89,7 +89,7 @@ This diagnostic suite covers shell decisions, post-tool feedback, and ordinary/p
 
 Native cases use the existing schema-1 fields. Shell hooks use `tool_name: "Bash"`; patches use `tool_name: "apply_patch"`. Both carry their text in `tool_input.command`. Preserve that raw patch name in fixtures: Failproof normalizes it to `Edit` during evaluation. `write_stdin` does not emit another `PreToolUse` for an existing command, so this suite does not claim coverage of later stdin writes. See the [official hook contract](https://learn.chatgpt.com/docs/hooks).
 
-Codex decoding is deliberately bounded: unsupported response shapes or decisions, including `ask` and input rewrites, produce `ERROR`. A Codex `PostToolUse` block or exit 2 becomes `FLAG`, because the tool has already run. These tests measure engine responses through the selected adapter; they do not verify live Codex enforcement.
+Codex decoding is deliberately bounded: unsupported response shapes or decisions, including `ask`, standalone `permissionDecision: allow`, and input rewrites, produce `ERROR`. Hook-specific output requires a matching event tag. Denials require a nonempty reason; exit 2 requires that reason on stderr. These checks follow the [pinned Codex parser](https://github.com/openai/codex/blob/e974aad3b1a8f144273e882c614aefe69eaef615/codex-rs/hooks/src/engine/output_parser.rs#L443). A valid Codex `PostToolUse` block or exit 2 becomes `FLAG`, because the tool has already run. These tests measure engine responses through the selected adapter; they do not verify live Codex enforcement.
 
 ## Test your team's workflows
 
