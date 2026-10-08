@@ -2,15 +2,18 @@
 // Only send payloads to the hook engine; never execute their commands.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, realpathSync, writeFileSync, existsSync, statSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { appendFileSync, readFileSync, realpathSync, writeFileSync, existsSync, statSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { resolve, join, dirname, sep } from "node:path";
+import { resolve, join, dirname, basename, sep } from "node:path";
 import { isDeepStrictEqual, parseArgs } from "node:util";
 import { CORPUS, CONTROLS } from "./corpus.mjs";
+import { validateCorpus } from "./suite.mjs";
 
 const binary = process.env.FAILPROOFAI_BIN || "failproofai";
 const BIN = binary.includes("/") ? resolve(binary) : binary;
 let isolationDir;
+let job;
+let runError;
 const env = {
   ...process.env, CI: "1", NO_COLOR: "1", FAILPROOFAI_NO_FIRST_RUN: "1",
   FAILPROOFAI_NO_DOWNLOAD: "1", FAILPROOFAI_TELEMETRY_DISABLED: "1",
@@ -138,33 +141,78 @@ function protectInput(path, label) {
     throw new Error(`${label} would be overwritten. Copy it to a separate input file first.`);
 }
 
+function readJSON(path, label) {
+  try { return JSON.parse(readFileSync(path, "utf8")); } catch (error) {
+    if (error instanceof SyntaxError) throw new Error(`${label} must contain valid JSON`);
+    throw error;
+  }
+}
+
 function readCorpus(path) {
   protectInput(path, "Corpus");
-  const data = JSON.parse(readFileSync(path, "utf8"));
-  if (data?.schemaVersion !== 1 || !Array.isArray(data.cases) || !data.cases.length ||
-      Object.keys(data).some((key) => !["schemaVersion", "cases"].includes(key)))
-    throw new Error("Corpus must have schemaVersion 1 and a nonempty cases array");
-  const fields = ["id", "cat", "target", "tier", "event", "tool_name", "tool_input", "tool_response", "coverage", "note", "expect"];
-  const seen = new Set();
-  return data.cases.map((c) => {
-    const benign = c?.tier === "benign";
-    const coverage = c?.coverage === undefined ? (benign ? "benign" : "exploratory") : c.coverage;
-    if (!c || typeof c !== "object" || Array.isArray(c) || Object.keys(c).some((key) => !fields.includes(key)) ||
-        ["id", "cat", "target", "tool_name"].some((key) => typeof c[key] !== "string" || !c[key].trim()) || seen.has(c.id) ||
-        !["direct", "evasion", "benign"].includes(c.tier) || !["PreToolUse", "PostToolUse"].includes(c.event) ||
-        !c.tool_input || typeof c.tool_input !== "object" || Array.isArray(c.tool_input) ||
-        typeof c.expect !== "string" || !Object.hasOwn(rank, c.expect) || (benign && c.expect !== "ALLOW") ||
-        !(benign ? coverage === "benign" : ["documented", "exploratory"].includes(coverage)) ||
-        (c.note !== undefined && typeof c.note !== "string"))
-      throw new Error(`Invalid or duplicate corpus case: ${plain(c?.id ?? "unknown")}`);
-    seen.add(c.id);
-    return { ...c, coverage, note: c.note ?? "" };
+  return validateCorpus(readJSON(path, "Corpus"));
+}
+
+function appendJobSummary() {
+  const path = process.env.GITHUB_STEP_SUMMARY;
+  if (!path || !job) return;
+  // A misconfigured summary path must never append to an input or a report.
+  const canonical = (file) => existsSync(file) ? realpathSync(file) :
+    existsSync(dirname(resolve(file))) ? join(realpathSync(dirname(resolve(file))), basename(file)) : resolve(file);
+  const output = canonical(path);
+  // Include input paths even when argument parsing failed before options existed.
+  const inputs = process.argv.slice(2).flatMap((arg, i, args) => {
+    const match = arg.match(/^--(?:corpus|baseline)(?:=(.*))?$/);
+    return match ? [match[1] ?? args[i + 1]].filter(Boolean) : [];
   });
+  for (const file of ["results.json", "REPORT.md", ...inputs]) {
+    if (output === canonical(file) || (existsSync(path) && existsSync(file) &&
+        statSync(path).dev === statSync(file).dev && statSync(path).ino === statSync(file).ino))
+      throw new Error("GITHUB_STEP_SUMMARY aliases an input or report");
+  }
+  const text = (value) => cell(plain(value).slice(0, 240));
+  const md = [`## Failproof Chaos · ${text(process.env.FAILPROOF_PROFILE || job.mode)}\n`,
+    `Engine: **${text(job.engine?.version ?? "unavailable")}** · ${text(process.platform)} · Node ${text(process.version)}.`,
+    `Suite: ${text(job.mode === "unavailable" ? "unavailable" : job.options.corpus || "built-in")} · category: ${text(job.options.cat ?? "all")} · mode: **${job.mode}**${job.mode === "isolated" ? " (policy defaults)" : job.mode === "combined" ? " (project configuration)" : ""}.\n`];
+  if (runError || !job.rows) {
+    md.push(`**INVALID RUN — incomplete measurement.** ${text(runError || "No current results available")}.\n`);
+  } else {
+    const { summary: s, expectations: e, comparison: c, rows } = job;
+    const status = process.exitCode === 2 ? "INVALID RUN OR COMPARISON" : process.exitCode === 1 ? "FAIL — CI checks failed" :
+      job.options.ci ? "PASS — CI checks satisfied" : "INSPECTION — CI gates disabled";
+    md.push(`**${status}**\n`,
+      e ? `Expectations: **${e.passed}/${e.total} passed**, ${e.failed} failed.` : "Expectations: no explicit expectations in the built-in suite.",
+      `Attacks: **${s.allowed} allowed**, ${s.held} held, ${s.flagged} advisory notices, ${s.errors} errors.`,
+      `Ordinary controls: **${s.controlsAllowed}/${s.controlsTotal} allowed**, ${s.falsePositives} unwanted blocks or notices, ${s.controlErrors} errors.`,
+      c ? `Baseline: ${text(c.baseline)} · **${c.changes.filter((r) => r.kind === "REGRESSION").length} regressions** · ${c.unbaselined.length} new or changed cases · ${c.removed.length} removed cases.` : "Baseline: not supplied.\n",
+      "\nDENY and ASK hold execution at the decision level. FLAG and INSTRUCT are advisory; live enforcement is not verified.\n");
+    const review = new Map();
+    const add = (id, label) => review.set(id, [...(review.get(id) || []), label]);
+    for (const r of rows) if (r.verdict === "ERROR" || (r.expect && r.expect !== r.verdict)) add(r.id, r.verdict === "ERROR" ? "Engine error" : "Expectation failed");
+    for (const r of c?.changes ?? []) add(r.id, `${r.kind}: ${r.before} → ${r.after}`);
+    for (const id of c?.unbaselined ?? []) add(id, "New or changed case — review required");
+    for (const id of c?.removed ?? []) add(id, "Removed case — review required");
+    if (review.size) {
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      md.push("| case | expected | actual | change or failure | reason |", "|------|----------|--------|-------------------|--------|");
+      for (const [id, labels] of [...review].slice(0, 40)) {
+        const r = byId.get(id);
+        md.push(`| ${text(id)} | ${r?.expect ?? "—"} | ${r?.verdict ?? "—"} | ${text(labels.join("; "))} | ${text(r?.reason ?? "")} |`);
+      }
+      if (review.size > 40) md.push(`\nShowing 40 of ${review.size} cases needing review; see the full artifacts.`);
+    } else md.push("No changed or failing cases in this measurement.");
+  }
+  if (/^[\w.-]+\/[\w.-]+$/.test(process.env.GITHUB_REPOSITORY || "") && /^\d+$/.test(process.env.GITHUB_RUN_ID || "")) {
+    const server = new URL(process.env.GITHUB_SERVER_URL || "https://github.com");
+    if (server.protocol === "https:") md.push(`\n[Full reports in workflow artifacts](${server.origin}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}#artifacts)`);
+  }
+  md.push("\nFull payloads are omitted here. Policy reasons can still contain supplied data.\n");
+  appendFileSync(path, md.join("\n") + "\n");
 }
 
 function readBaseline(path, mode) {
   protectInput(path, "Baseline");
-  const data = JSON.parse(readFileSync(path, "utf8"));
+  const data = readJSON(path, "Baseline");
   if (!Array.isArray(data) && data?.schemaVersion !== 1) throw new Error("Unsupported baseline schema");
   if (!Array.isArray(data) && ![undefined, "combined", "isolated"].includes(data.mode)) throw new Error("Invalid baseline mode");
   if ((data.mode ?? "combined") !== mode) throw new Error("Baseline mode must match this run");
@@ -202,6 +250,7 @@ function main() {
       `Built-in categories: ${[...new Set([...CORPUS, ...CONTROLS].map((c) => c.cat))].join(", ")}. Custom categories come from the suite.`);
     return;
   }
+  job = { options, mode: options.isolate ? "isolated" : "combined" };
   for (const option of ["corpus", "baseline"])
     if (options[option] !== undefined && !options[option].trim()) throw new Error(`--${option} requires a nonempty file path`);
   if (options.ci && !options.baseline && !options.corpus) throw new Error("--ci requires --baseline <file> or --corpus <file.json>");
@@ -212,6 +261,7 @@ function main() {
   // Read before running or writing artifacts, so bad input preserves existing results.
   const baseline = options.baseline ? readBaseline(options.baseline, mode).filter((r) => !options.cat || r.cat === options.cat) : null;
   const engine = { binary: BIN, version: probe(["--version"]) };
+  job.engine = engine;
   const policies = probe(["policies"]);
   const isolation = options.isolate ? isolate(cases) : null;
   const rows = cases.map((c) => {
@@ -337,11 +387,18 @@ function main() {
   console.log("\nwrote REPORT.md and results.json");
   process.exitCode = summary.errors || summary.controlErrors || (options.ci && incomplete) ? 2
     : options.ci && (regressions.length || mismatches.length) ? 1 : 0;
+  Object.assign(job, { rows, summary, comparison, expectations });
 }
 
 try { main(); } catch (error) {
+  job ??= { options: {}, mode: "unavailable" };
+  runError = error.message;
   console.error(`ERROR: ${plain(error.message)}`);
   process.exitCode = 2;
 } finally {
   if (isolationDir) rmSync(isolationDir, { recursive: true, force: true });
+  try { appendJobSummary(); } catch (error) {
+    console.error(`ERROR: Could not write GitHub summary: ${plain(error.message)}`);
+    process.exitCode ||= 2;
+  }
 }

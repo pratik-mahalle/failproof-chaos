@@ -16,9 +16,10 @@ const resultsFile = join(work, "results.json");
 const callsFile = join(work, "engine-calls.txt");
 const capturedFile = join(work, "captured.json");
 const read = () => JSON.parse(readFileSync(resultsFile, "utf8"));
-function run(args = ["--cat", "sudo"], mode = "normal", binary = engine) {
+function run(args = ["--cat", "sudo"], mode = "normal", binary = engine, extraEnv = {}) {
   return spawnSync(process.execPath, [runner, ...args], {
-    cwd: work, env: { ...process.env, FAILPROOFAI_BIN: binary, FAILPROOFAI_PACK_DIR: join(work, "packs"), CHECK_MODE: mode },
+    cwd: work, env: { ...process.env, GITHUB_STEP_SUMMARY: "", FAILPROOFAI_BIN: binary,
+      FAILPROOFAI_PACK_DIR: join(work, "packs"), CHECK_MODE: mode, ...extraEnv },
     encoding: "utf8", timeout: 30000,
   });
 }
@@ -422,7 +423,114 @@ process.exit(0);
   assert.equal(readFileSync(resultsFile, "utf8"), savedResults);
   assert.equal(readFileSync(join(work, "REPORT.md"), "utf8"), savedReport);
   assert.equal(readFileSync(callsFile, "utf8"), savedCalls);
-  console.log("CLI checks passed: custom suites, exact expectations, payload safety, coverage, isolation, baselines, CI exits, and errors.");
+
+  // GitHub summaries use this invocation, including failures, never saved artifacts.
+  const summaryFile = join(work, "step-summary.md");
+  const summaryEnv = { GITHUB_STEP_SUMMARY: summaryFile, FAILPROOF_PROFILE: "team | <review>\n[link](https://example.com)",
+    GITHUB_REPOSITORY: "example/project", GITHUB_RUN_ID: "123", GITHUB_SERVER_URL: "https://github.com" };
+  const summaryText = () => readFileSync(summaryFile, "utf8");
+  function checkSummary(args = customCI, mode = "normal", binary = engine) {
+    writeFileSync(summaryFile, "");
+    return run(args, mode, binary, summaryEnv);
+  }
+  writeFileSync(corpusFile, JSON.stringify(suite));
+  assert.equal(checkSummary().status, 0);
+  assert.match(summaryText(), /PASS — CI checks satisfied/);
+  assert.match(summaryText(), /2\/2 passed/);
+  assert.match(summaryText(), /team \\\| &lt;review&gt;/);
+  assert.doesNotMatch(summaryText(), /<review>|\[link\]\(https:\/\/example.com\)|sudo rm/);
+  assert.match(summaryText(), /https:\/\/github.com\/example\/project\/actions\/runs\/123#artifacts/);
+  assert.ok(summaryText().includes(process.version));
+  writeFileSync(baseline, JSON.stringify(read()));
+  assert.equal(checkSummary(customBaselineCI, "slip").status, 1);
+  assert.match(summaryText(), /FAIL — CI checks failed/);
+  assert.match(summaryText(), /\| unsafe \| DENY \| ALLOW \| Expectation failed; REGRESSION: DENY → ALLOW/);
+  assert.match(summaryText(), /Attacks: \*\*1 allowed\*\*/);
+  assert.equal(checkSummary(customCI, "ask").status, 1);
+  assert.match(summaryText(), /\| unsafe \| DENY \| ASK \| Expectation failed/);
+  assert.equal(checkSummary(customCI, "false-positive").status, 1);
+  assert.match(summaryText(), /1 unwanted blocks or notices/);
+  assert.match(summaryText(), /\| ordinary \| ALLOW \| DENY \|/);
+  assert.equal(checkSummary(customCI, "control-error").status, 2);
+  assert.match(summaryText(), /INVALID RUN OR COMPARISON/);
+  assert.match(summaryText(), /\| ordinary \| ALLOW \| ERROR \| Engine error/);
+  assert.equal(checkSummary(["--corpus", corpusFile], "slip").status, 0);
+  assert.match(summaryText(), /INSPECTION — CI gates disabled/);
+  assert.match(summaryText(), /1\/2 passed/);
+
+  writeFileSync(corpusFile, JSON.stringify({ ...suite, cases: [{ ...suite.cases[0], expect: "ASK" }] }));
+  assert.equal(checkSummary(customBaselineCI).status, 2);
+  assert.match(summaryText(), /1 new or changed cases · 1 removed cases/);
+  assert.match(summaryText(), /Removed case — review required/);
+  assert.match(summaryText(), /New or changed case — review required/);
+  writeFileSync(corpusFile, JSON.stringify({ ...suite, cases: [notices.cases[0]] }));
+  assert.equal(run(customCI, "all-allow").status, 1);
+  writeFileSync(baseline, JSON.stringify(read()));
+  assert.equal(checkSummary(customBaselineCI).status, 0);
+  assert.match(summaryText(), /ALLOW → INSTRUCT/);
+  assert.match(summaryText(), /0 held, 1 advisory notices/);
+  assert.match(summaryText(), /FLAG and INSTRUCT are advisory/);
+
+  writeFileSync(corpusFile, JSON.stringify(suite));
+  assert.equal(checkSummary().status, 0);
+  const oldReport = readFileSync(join(work, "REPORT.md"), "utf8");
+  assert.equal(checkSummary(customCI, "normal", join(work, "missing-engine")).status, 2);
+  assert.match(summaryText(), /INVALID RUN — incomplete measurement/);
+  assert.doesNotMatch(summaryText(), /PASS|2\/2 passed/);
+  assert.equal(readFileSync(join(work, "REPORT.md"), "utf8"), oldReport);
+  const callsBeforeInvalid = readFileSync(callsFile, "utf8");
+  writeFileSync(corpusFile, JSON.stringify({ ...suite, cases: [{ ...suite.cases[0], expect: "bad" }] }));
+  const invalid = checkSummary([...customCI, "--cat", "team-work"]);
+  assert.equal(invalid.status, 2);
+  assert.match(invalid.stderr, /unsafe.*expect must be/);
+  assert.match(summaryText(), /INVALID RUN — incomplete measurement/);
+  assert.equal(readFileSync(callsFile, "utf8"), callsBeforeInvalid);
+  for (const [file, args, label] of [[corpusFile, customCI, "Corpus"], [baseline, customBaselineCI, "Baseline"]]) {
+    writeFileSync(corpusFile, JSON.stringify(suite));
+    writeFileSync(file, "PRIVATE-CAPTURE-TEXT");
+    const malformed = checkSummary(args);
+    assert.equal(malformed.status, 2);
+    assert.match(summaryText(), new RegExp(`${label} must contain valid JSON`));
+    assert.doesNotMatch(summaryText() + malformed.stderr, /PRIVATE-CAPTURE-TEXT/);
+  }
+
+  writeFileSync(corpusFile, JSON.stringify(example));
+  assert.equal(checkSummary([...customCI, "--isolate"], "isolation").status, 0);
+  assert.match(summaryText(), /isolated\*\* \(policy defaults\)/);
+  assert.equal(checkSummary(["--help"]).status, 0);
+  assert.equal(summaryText(), "");
+  for (const args of [["--unknown"], ["--corpus"], ["--corpus", join(work, "absent", "suite.json"), "--ci"]]) {
+    assert.equal(checkSummary(args).status, 2);
+    assert.match(summaryText(), /INVALID RUN — incomplete measurement/);
+    assert.doesNotMatch(summaryText(), /PASS —/);
+  }
+
+  writeFileSync(corpusFile, JSON.stringify(suite));
+  for (const [mode, status] of [["normal", 2], ["slip", 1], ["crash", 2]]) {
+    const failedWrite = run(customCI, mode, engine, { GITHUB_STEP_SUMMARY: work });
+    assert.equal(failedWrite.status, status);
+    assert.match(failedWrite.stderr, /Could not write GitHub summary/);
+  }
+  const corpusBeforeSummary = readFileSync(corpusFile, "utf8");
+  for (const file of [corpusFile, resultsFile, join(work, "alias.json"), join(work, "hardlink.json")]) {
+    const alias = run(customCI, "normal", engine, { GITHUB_STEP_SUMMARY: file });
+    assert.equal(alias.status, 2);
+    assert.match(alias.stderr, /GITHUB_STEP_SUMMARY aliases an input or report/);
+  }
+  assert.equal(readFileSync(corpusFile, "utf8"), corpusBeforeSummary);
+  assert.equal(run([...customCI, "--unknown"], "normal", engine, { GITHUB_STEP_SUMMARY: corpusFile }).status, 2);
+  assert.equal(readFileSync(corpusFile, "utf8"), corpusBeforeSummary);
+
+  const large = { schemaVersion: 1, cases: Array.from({ length: 60 }, (_, i) => ({ ...suite.cases[0],
+    id: `${i}-` + "|<script>".repeat(100) })) };
+  writeFileSync(corpusFile, JSON.stringify(large));
+  assert.equal(checkSummary(customCI, "slip").status, 1);
+  assert.match(summaryText(), /Showing 40 of 60 cases/);
+  assert.ok(Buffer.byteLength(summaryText()) < 100000);
+  assert.doesNotMatch(summaryText(), /<script>/);
+  console.log("CLI checks passed: suites, expectations, payload safety, isolation, baselines, CI exits, errors, and GitHub summaries.");
 } finally {
   rmSync(work, { recursive: true, force: true });
 }
+
+await import("./test-case.mjs");
