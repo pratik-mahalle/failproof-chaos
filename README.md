@@ -23,7 +23,7 @@
 
 Failproof Chaos is a regression kit for [failproofai](https://befailproof.ai) guardrails. It sends realistic agent tool calls (`rm -rf`, `curl | sh`, `.env` reads, secret leaks, attempts to disable the guard) to failproofai's hook engine, records what the engine decides, and fails CI when protection gets weaker.
 
-- **Nothing is executed.** Commands and file writes are JSON payloads; the harness never runs them.
+- **Attacks are never run.** Each one is sent to failproofai as a description of the action, the same message an agent sends before acting, and only failproofai's decision is recorded. `rm -rf /` deletes nothing.
 - **Offline.** No LLM, no API keys, no npm dependencies.
 - **Reviewed.** Results are compared with saved baselines, so a policy or engine upgrade shows exactly what changed.
 
